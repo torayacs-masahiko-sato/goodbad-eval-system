@@ -1,0 +1,51 @@
+# Render Blueprint：このファイルで画面とAPIの2サービスを一括作成する
+# 使い方：Render ダッシュボード > New > Blueprint > このリポジトリを選択
+# sync: false の値は作成時に画面で入力を求められる（秘密情報をGitに載せないため）
+services:
+  # ---- AI要約APIサーバー（Express） ----
+  - type: web
+    name: goodbad-api
+    runtime: node
+    plan: free
+    region: singapore          # Supabase(東京)に最も近いリージョン
+    buildCommand: npm install --prefix server
+    startCommand: node server/index.js
+    healthCheckPath: /healthz
+    envVars:
+      # 24系の最新版を使う（20系はサポート終了でセキュリティ修正が出ない）
+      # 2026/10 の Node.js 脆弱性は 24.22.1 以降で修正済み
+      - key: NODE_VERSION
+        value: "24"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5-5
+      - key: ALLOWED_ORIGIN     # 画面(goodbad-web)のURL。初回作成後に入力
+        sync: false
+
+  # ---- 画面（React, 静的サイト。スリープしない） ----
+  - type: web
+    name: goodbad-web
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    headers:
+      - path: /*
+        name: X-Robots-Tag
+        value: noindex, nofollow
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+    envVars:
+      - key: NODE_VERSION       # ビルド時のみ使用。APIと揃える
+        value: "24"
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_API_URL       # APIサーバー(goodbad-api)のURL。初回作成後に入力
+        sync: false
