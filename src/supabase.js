@@ -1,7 +1,11 @@
 // Supabase 接続。URLとキーは .env（ローカル）または Vercel の環境変数から読み込む
 import { createClient } from '@supabase/supabase-js'
 
-const url = import.meta.env.VITE_SUPABASE_URL
+// 「/rest/v1/」など余分なパスが付いていても動くよう、https://xxxx.supabase.co の部分だけを使う
+function baseUrl(raw) {
+  try { return raw ? new URL(raw.trim()).origin : '' } catch { return '' }
+}
+const url = baseUrl(import.meta.env.VITE_SUPABASE_URL)
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const configError = !url || !key

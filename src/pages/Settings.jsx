@@ -1,8 +1,9 @@
 // 設定：メンバーの追加・名前変更・並び順・非表示、ログアウト
 import { useState } from 'react'
 import { supabase, errMsg } from '../supabase'
+import PasskeySection from '../PasskeySection'
 
-export default function Settings({ allMembers, reload, notify, session }) {
+export default function Settings({ allMembers, reload, notify, session, onPasskeyChange }) {
   const [name, setName] = useState('')
   const [editId, setEditId] = useState(null)
   const [editName, setEditName] = useState('')
@@ -63,6 +64,8 @@ export default function Settings({ allMembers, reload, notify, session }) {
         </div>
         <p className="muted">異動・退職したメンバーは「非表示」にしてください。記録とレポートは残ります。</p>
       </section>
+
+      <PasskeySection notify={notify} onChange={onPasskeyChange} />
 
       <section className="card">
         <h2>アカウント</h2>
