@@ -18,8 +18,10 @@ import express from 'express'
 import { createClient } from '@supabase/supabase-js'
 import { halfKeyOfMonth, halfRange, monthRange, monthLabel, halfLabel, jstDateStr, toTs } from '../src/period.js'
 
+// 「/rest/v1/」など余分なパスが付いていても動くよう、https://xxxx.supabase.co の部分だけを使う
+const SUPABASE_URL = (() => { try { return new URL(process.env.SUPABASE_URL.trim()).origin } catch { return process.env.SUPABASE_URL } })()
 const {
-  SUPABASE_URL, SUPABASE_ANON_KEY, ANTHROPIC_API_KEY,
+  SUPABASE_ANON_KEY, ANTHROPIC_API_KEY,
   ANTHROPIC_MODEL = 'claude-sonnet-5-5', ALLOWED_ORIGIN = '', PORT = 3001,
 } = process.env
 
