@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase, errMsg } from '../supabase'
 import { MemberPicker, useGoals } from '../components'
 import { todayStr, halfKeyOf, shortDate, timeLabel } from '../period'
+import { encRow, decRows } from '../crypto'
 
 export default function QuickAdd({ members, memberId, setMemberId, notify }) {
   const [kind, setKind] = useState('good')
@@ -21,7 +22,7 @@ export default function QuickAdd({ members, memberId, setMemberId, notify }) {
     if (!memberId) return
     const { data, error } = await supabase.from('points').select('*').eq('member_id', memberId)
       .order('occurred_at', { ascending: false }).limit(5)
-    if (error) notify(errMsg(error), 'error'); else setRecent(data)
+    if (error) notify(errMsg(error), 'error'); else setRecent(await decRows('points', data))
   }
   useEffect(() => { loadRecent() }, [memberId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -31,11 +32,16 @@ export default function QuickAdd({ members, memberId, setMemberId, notify }) {
     setBusy(true)
     // 今日なら現在時刻、別の日なら正午として記録（日付の境目でずれないように）
     const occurred_at = date === todayStr() ? new Date().toISOString() : `${date}T12:00:00+09:00`
-    const { error } = await supabase.from('points').insert({
-      member_id: memberId, kind, content: content.trim(), occurred_at, goal_id: goalId || null,
-    })
+    try {
+      const { error } = await supabase.from('points').insert(await encRow('points', {
+        member_id: memberId, kind, content: content.trim(), occurred_at, goal_id: goalId || null,
+      }))
+      if (error) throw error
+    } catch (e) {
+      setBusy(false)
+      return notify(`登録できませんでした：${errMsg(e)}`, 'error') // 入力内容は消さずに残す
+    }
     setBusy(false)
-    if (error) return notify(`登録できませんでした：${errMsg(error)}`, 'error') // 入力内容は消さずに残す
     notify('登録しました')
     setContent(''); setGoalId('')
     loadRecent()

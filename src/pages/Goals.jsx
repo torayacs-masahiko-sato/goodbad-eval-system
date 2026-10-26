@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { supabase, errMsg } from '../supabase'
 import { MemberPicker, Pager, useGoals } from '../components'
 import { currentHalfKey, shiftHalf, halfLabel } from '../period'
+import { encRow } from '../crypto'
+// ※「前の半期からコピー」は暗号文のまま複製する（同じ鍵・同じ列なので復号できる）
 
 const blank = { title: '', description: '' }
 
@@ -16,12 +18,17 @@ export default function Goals({ members, memberId, setMemberId, notify }) {
   const save = async () => {
     if (!form.title.trim()) return notify('目標のタイトルを入力してください', 'error')
     setBusy(true)
-    const row = { title: form.title.trim(), description: form.description.trim() || null }
-    const { error } = editId
-      ? await supabase.from('goals').update(row).eq('id', editId)
-      : await supabase.from('goals').insert({ ...row, member_id: memberId, period_key: half, sort_order: goals.length })
+    try {
+      const row = await encRow('goals', { title: form.title.trim(), description: form.description.trim() || null })
+      const { error } = editId
+        ? await supabase.from('goals').update(row).eq('id', editId)
+        : await supabase.from('goals').insert({ ...row, member_id: memberId, period_key: half, sort_order: goals.length })
+      if (error) throw error
+    } catch (e) {
+      setBusy(false)
+      return notify(errMsg(e), 'error')
+    }
     setBusy(false)
-    if (error) return notify(errMsg(error), 'error')
     notify(editId ? '更新しました' : '追加しました')
     setForm(blank); setEditId(null); reload()
   }

@@ -8,6 +8,14 @@ import Goals from './pages/Goals'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import { passkeySupported, listPasskeys, registerPasskey, passkeyErrMsg } from './passkey'
+import { ensureKey, decRows, migratePlaintext } from './crypto'
+
+// 一定時間操作がなければ自動ログアウト（スマホの置き忘れ・共用PC対策）。
+// パスキーなら再ログインは数秒なので、短めでも業務に支障が出にくい
+const IDLE_LIMIT_MS = 12 * 60 * 60 * 1000 // 12時間
+const ACTIVE_KEY = 'goodbad.lastActive'
+const readLastActive = () => { try { return Number(localStorage.getItem(ACTIVE_KEY)) || 0 } catch { return 0 } }
+const writeLastActive = () => { try { localStorage.setItem(ACTIVE_KEY, String(Date.now())) } catch { /* 記録できなくても動作に影響なし */ } }
 
 // 「パスキー登録のおすすめ」を閉じたかどうか（この端末だけの記憶。使えない環境でも動作に影響しない）
 const DISMISS_KEY = 'goodbad.passkeyPromptDismissed'
@@ -41,14 +49,62 @@ export default function App() {
     return () => sub.subscription.unsubscribe()
   }, [])
 
+  const userId = session?.user?.id
+
+  // ---------- 自動ログアウト ----------
+  useEffect(() => {
+    if (!userId) return
+    const last = readLastActive()
+    if (last && Date.now() - last > IDLE_LIMIT_MS) {
+      supabase.auth.signOut() // 端末内の暗号鍵は残す（次回ログインを早くするため。鍵だけではDBは読めない）
+      return
+    }
+    writeLastActive()
+    let lastWrite = Date.now()
+    const touch = () => { if (Date.now() - lastWrite > 60_000) { lastWrite = Date.now(); writeLastActive() } }
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      if (Date.now() - readLastActive() > IDLE_LIMIT_MS) supabase.auth.signOut()
+      else touch()
+    }
+    window.addEventListener('pointerdown', touch)
+    window.addEventListener('keydown', touch)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('pointerdown', touch)
+      window.removeEventListener('keydown', touch)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [userId])
+
+  // ---------- 暗号鍵の準備 → 既存の平文データを暗号化 ----------
+  const [keyState, setKeyState] = useState('loading') // 'loading' | 'ready' | エラーメッセージ
+  const [keyTry, setKeyTry] = useState(0)
+  useEffect(() => {
+    if (!userId) return
+    let alive = true
+    setKeyState('loading')
+    ensureKey(userId)
+      .then(() => {
+        if (!alive) return
+        setKeyState('ready')
+        migratePlaintext()
+          .then((n) => { if (n) notify(`保存済みデータ ${n}件を暗号化しました`) })
+          .catch((e) => console.error('暗号化の移行に失敗', e)) // 次回ログイン時に再実行される
+      })
+      .catch((e) => { if (alive) setKeyState(errMsg(e)) })
+    return () => { alive = false }
+  }, [userId, keyTry, notify])
+
   const loadMembers = useCallback(async () => {
     const { data, error } = await supabase.from('members').select('*').order('sort_order').order('created_at')
     if (error) return notify(errMsg(error), 'error')
-    setMembers(data)
-    setMemberId((cur) => cur && data.some((m) => m.id === cur) ? cur : (data.find((m) => m.active)?.id ?? null))
+    const rows = await decRows('members', data)
+    setMembers(rows)
+    setMemberId((cur) => cur && rows.some((m) => m.id === cur) ? cur : (rows.find((m) => m.active)?.id ?? null))
   }, [notify])
 
-  useEffect(() => { if (session) loadMembers() }, [session, loadMembers])
+  useEffect(() => { if (session && keyState === 'ready') loadMembers() }, [session, keyState, loadMembers])
 
   // パスキー未登録なら、登録をおすすめするカードを出す
   const [suggestPasskey, setSuggestPasskey] = useState(false)
@@ -57,7 +113,6 @@ export default function App() {
     try { setSuggestPasskey((await listPasskeys()).length === 0) }
     catch { setSuggestPasskey(false) } // パスキー機能が無効な場合などは何も出さない
   }, [])
-  const userId = session?.user?.id
   useEffect(() => { if (userId) checkPasskeys() }, [userId, checkPasskeys])
 
   const quickRegister = async () => {
@@ -68,6 +123,27 @@ export default function App() {
   if (configError) return <div className="login card">{configError}</div>
   if (session === undefined) return <div className="empty">読み込み中…</div>
   if (!session) return <Login />
+  if (keyState !== 'ready') {
+    return (
+      <div className="login card">
+        {keyState === 'loading' ? (
+          <>
+            <h2 style={{ fontSize: 16 }}>データ保護の準備中…</h2>
+            <p className="muted">この端末で初めて使うときは、サーバーの起動待ちで最大1分ほどかかります。</p>
+          </>
+        ) : (
+          <>
+            <h2 style={{ fontSize: 16 }}>データを開けませんでした</h2>
+            <p style={{ color: 'var(--bad)', fontSize: 14 }}>{keyState}</p>
+            <div className="row">
+              <button className="btn primary" onClick={() => setKeyTry((n) => n + 1)}>再試行</button>
+              <button className="btn" onClick={() => supabase.auth.signOut()}>ログアウト</button>
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
 
   const active = members.filter((m) => m.active)
   const shared = { members: active, memberId, setMemberId, notify }

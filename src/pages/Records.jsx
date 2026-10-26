@@ -6,6 +6,7 @@ import {
   todayStr, currentMonthKey, currentHalfKey, dayRange, monthRange, halfRange, shiftDay, shiftMonth, shiftHalf,
   dayLabel, monthLabel, halfLabel, jstDateStr, timeLabel, toTs, halfKeyOf, halfKeyOfMonth,
 } from '../period'
+import { encRow, decRows } from '../crypto'
 
 export default function Records({ members, memberId, setMemberId, notify }) {
   const [mode, setMode] = useState('month')
@@ -34,9 +35,10 @@ export default function Records({ members, memberId, setMemberId, notify }) {
         .order('occurred_at', { ascending: false }),
       supabase.from('goals').select('id,title,period_key').eq('member_id', memberId),
     ])
+    if (p.error || g.error) { setLoading(false); return notify(errMsg(p.error || g.error), 'error') }
+    const [pts, gls] = await Promise.all([decRows('points', p.data), decRows('goals', g.data)])
     setLoading(false)
-    if (p.error || g.error) return notify(errMsg(p.error || g.error), 'error')
-    setPoints(p.data); setAllGoals(g.data)
+    setPoints(pts); setAllGoals(gls)
   }
   useEffect(() => { load() }, [memberId, from, to]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setGoalFilter('') }, [memberId, halfOfView])
@@ -70,10 +72,12 @@ export default function Records({ members, memberId, setMemberId, notify }) {
   }
   const saveEdit = async () => {
     if (!editing.content.trim()) return notify('内容が空です', 'error')
-    const { error } = await supabase.from('points').update({
-      kind: editing.kind, content: editing.content.trim(), goal_id: editing.goal_id || null,
-    }).eq('id', editing.id)
-    if (error) return notify(errMsg(error), 'error')
+    try {
+      const { error } = await supabase.from('points').update(await encRow('points', {
+        kind: editing.kind, content: editing.content.trim(), goal_id: editing.goal_id || null,
+      })).eq('id', editing.id)
+      if (error) throw error
+    } catch (e) { return notify(errMsg(e), 'error') }
     setEditing(null); notify('更新しました'); load()
   }
 

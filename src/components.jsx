@@ -1,6 +1,7 @@
 // 各画面で共通して使う小さな部品
 import { useEffect, useState } from 'react'
 import { supabase, errMsg } from './supabase'
+import { decRows } from './crypto'
 
 export function MemberPicker({ members, memberId, setMemberId }) {
   return (
@@ -43,10 +44,11 @@ export function useGoals(memberId, halfKey, notify) {
     let alive = true
     supabase.from('goals').select('*').eq('member_id', memberId).eq('period_key', halfKey)
       .order('sort_order').order('created_at')
-      .then(({ data, error }) => {
+      .then(async ({ data, error }) => {
         if (!alive) return
-        if (error) notify(errMsg(error), 'error')
-        else setGoals(data)
+        if (error) return notify(errMsg(error), 'error')
+        const rows = await decRows('goals', data)
+        if (alive) setGoals(rows)
       })
     return () => { alive = false }
   }, [memberId, halfKey, ver, notify])

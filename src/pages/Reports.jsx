@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase, errMsg } from '../supabase'
 import { MemberPicker, Pager, Seg, MarkdownView } from '../components'
 import { currentMonthKey, currentHalfKey, shiftMonth, shiftHalf, monthLabel, halfLabel } from '../period'
+import { decRow } from '../crypto'
 
 // Render 上の API サーバーのURL（末尾の / は除く）
 const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -52,9 +53,10 @@ export default function Reports({ members, memberId, setMemberId, notify }) {
     setLoading(true)
     const { data, error } = await supabase.from('reports').select('*')
       .eq('member_id', memberId).eq('report_type', type).eq('period_key', key).maybeSingle()
+    if (error) { setLoading(false); return notify(errMsg(error), 'error') }
+    const row = await decRow('reports', data)
     setLoading(false)
-    if (error) return notify(errMsg(error), 'error')
-    setReport(data)
+    setReport(row)
   }
   useEffect(() => { load() }, [memberId, type, key]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { wakeApi() }, [])

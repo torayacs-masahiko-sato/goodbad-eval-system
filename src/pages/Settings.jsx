@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { supabase, errMsg } from '../supabase'
 import PasskeySection from '../PasskeySection'
+import { encRow, clearKey } from '../crypto'
 
 export default function Settings({ allMembers, reload, notify, session, onPasskeyChange }) {
   const [name, setName] = useState('')
@@ -10,14 +11,23 @@ export default function Settings({ allMembers, reload, notify, session, onPasske
 
   const add = async () => {
     if (!name.trim()) return
-    const { error } = await supabase.from('members').insert({ name: name.trim(), sort_order: allMembers.length })
-    if (error) return notify(errMsg(error), 'error')
-    setName(''); notify('追加しました'); reload()
+    try {
+      const { error } = await supabase.from('members').insert(await encRow('members', { name: name.trim(), sort_order: allMembers.length }))
+      if (error) throw error
+      setName(''); notify('追加しました'); reload()
+    } catch (e) { notify(errMsg(e), 'error') }
   }
   const update = async (id, row, msg = '更新しました') => {
-    const { error } = await supabase.from('members').update(row).eq('id', id)
-    if (error) return notify(errMsg(error), 'error')
-    notify(msg); reload()
+    try {
+      const { error } = await supabase.from('members').update(await encRow('members', row)).eq('id', id)
+      if (error) throw error
+      notify(msg); reload()
+    } catch (e) { notify(errMsg(e), 'error') }
+  }
+  // 手動ログアウト：この端末から暗号鍵も消す（共用PC・端末を手放すとき用）
+  const logout = async () => {
+    await clearKey()
+    await supabase.auth.signOut()
   }
   // 並べ替え：隣のメンバーと順番を入れ替える
   const move = async (i, dir) => {
@@ -70,7 +80,8 @@ export default function Settings({ allMembers, reload, notify, session, onPasske
       <section className="card">
         <h2>アカウント</h2>
         <p className="muted">{session.user.email} でログイン中</p>
-        <button className="btn" onClick={() => supabase.auth.signOut()}>ログアウト</button>
+        <button className="btn" onClick={logout}>ログアウト</button>
+        <p className="muted">12時間操作がないと自動でログアウトします。保存データは暗号化され、鍵はSupabaseとは別のサーバーで管理しています。</p>
       </section>
     </>
   )
