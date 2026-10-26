@@ -26,6 +26,10 @@ services:
         value: claude-sonnet-5-5
       - key: ALLOWED_ORIGIN     # 画面(goodbad-web)のURL。初回作成後に入力
         sync: false
+      - key: ENCRYPTION_KEY     # データ暗号化の鍵（32文字以上）。★紛失・変更するとデータが読めなくなる。必ず控えを保管
+        sync: false
+      - key: ALLOWED_EMAILS     # 任意：鍵とAIを使えるメールアドレス（カンマ区切り）
+        sync: false
 
   # ---- 画面（React, 静的サイト。スリープしない） ----
   - type: web
@@ -40,6 +44,23 @@ services:
       - path: /*
         name: X-Frame-Options
         value: DENY
+      # CSP：この画面で動かせるスクリプトと通信先を限定する。
+      # 万一、悪意あるスクリプトが入り込んでも、外部へデータを送れないようにするため
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://*.supabase.co https://*.onrender.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=31536000; includeSubDomains
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(), microphone=(), geolocation=(), payment=(), usb=()
     envVars:
       - key: NODE_VERSION       # ビルド時のみ使用。APIと揃える
         value: "24"

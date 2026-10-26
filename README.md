@@ -53,7 +53,9 @@ PC・スマホのどちらからでも、ブラウザで URL を開くだけで�
 
 ### 手順1：Supabase（DB・ログイン）
 1. Supabase で New project を作成します。**Region は Tokyo（Northeast Asia）** を選んでください
-2. 左メニュー **SQL Editor** を開き、`supabase/schema.sql` の中身を全部貼り付けて **Run** します
+2. 左メニュー **SQL Editor** を開き、次の2つを**この順番で**、それぞれ全文貼り付けて **Run** します
+   1. `supabase/schema.sql`
+   2. `supabase/migrate_002_encryption.sql`（暗号化対応・権限の締め付け）
 3. **Authentication → Sign In / Providers → Email** で「Allow new users to sign up」を **オフ** にします。
    第三者が勝手にアカウントを作れないようにするためです
 4. **Authentication → Users → Add user** で、自分のメールアドレスとパスワードを登録します
@@ -75,6 +77,8 @@ PC・スマホのどちらからでも、ブラウザで URL を開くだけで�
 | goodbad-api | `SUPABASE_ANON_KEY` | 手順1-5 の anon public キー |
 | goodbad-api | `ANTHROPIC_API_KEY` | Claude API キー |
 | goodbad-api | `ALLOWED_ORIGIN` | ひとまず `https://example.com`（後で直す） |
+| goodbad-api | `ENCRYPTION_KEY` | データ暗号化の鍵。作り方は「7. データ保護」を参照。**★必ず控えを保管** |
+| goodbad-api | `ALLOWED_EMAILS` | 自分のログイン用メールアドレス（任意だが推奨） |
 | goodbad-web | `VITE_SUPABASE_URL` | 手順1-5 の Project URL |
 | goodbad-web | `VITE_SUPABASE_ANON_KEY` | 手順1-5 の anon public キー |
 | goodbad-web | `VITE_API_URL` | ひとまず `https://example.com`（後で直す） |
@@ -122,7 +126,7 @@ npm install && npm run dev          # http://localhost:3001
 # 画面（別のターミナルで、フォルダ直下にて）
 cp .env.example .env                # 値を書き換える
 npm install && npm run dev          # http://localhost:5173
-npm test                            # 期間計算のテスト
+npm test                            # 期間計算・暗号化のテスト
 ```
 
 ## 5. エラー時の挙動
@@ -140,6 +144,10 @@ npm test                            # 期間計算のテスト
 | 端末を紛失した | パスワードでログインし、設定タブで紛失した端末のパスキーを削除してください |
 | 許可していないURLからAPIを呼ぶ | 拒否します（`ALLOWED_ORIGIN` で制御） |
 | 環境変数の設定漏れ | APIは起動時に Render の Logs へ警告を出します。レポート作成時も画面に表示します |
+| ログイン直後に「データ保護の準備中…」 | その端末で初めて使うとき、鍵をAPIサーバーから受け取っています（最大1分）。2回目以降は待ちません |
+| 「データを開けませんでした」 | APIサーバーに接続できない、または `ALLOWED_EMAILS` に含まれていないアカウントです。「再試行」を押すか設定を確認してください |
+| 「［復号できません…］」と表示される | `ENCRYPTION_KEY` が以前と違う値になっています。保管している控えの値に戻してください |
+| 12時間操作しなかった | 自動でログアウトします。パスキーで再ログインしてください |
 
 ## 6. 運用上の注意
 - **人事評価に関わる情報です。**
@@ -151,19 +159,73 @@ npm test                            # 期間計算のテスト
   バックアップのため、定期的に Table Editor から CSV エクスポートしておくと安心です。
 - レポート作成の待ち時間をなくしたい場合は、goodbad-api を Render の有料プラン（Starter）にするとスリープしなくなります。
 
-## 7. ファイル構成
+## 7. データ保護（暗号化とその他の対策）
+
+### 暗号化の仕組み
+氏名・メモ・目標・記録の内容・AIレポートは、**画面側で暗号化してから** Supabase に保存します（AES-256-GCM）。
+暗号を解く鍵は Supabase ではなく **Render（goodbad-api）の環境変数** に置いています。
+そのため、DBの中身が丸ごと漏れても、Render の鍵がなければ読めません。
+
 ```
-render.yaml                  Render の構成定義（2サービス一括作成）
-supabase/schema.sql          DB定義（テーブル・アクセス制御）
-server/index.js              AI要約APIサーバー（Express）
-src/App.jsx                  画面全体の枠・タブ切替
-src/pages/                   各画面（登録・記録・目標・レポート・設定）
-src/period.js                期間（日/月/半期）の計算 ※画面・API共通
-src/styles.css               デザイン（色は先頭の変数で一括変更）
-tests/period.test.js         期間計算のテスト
+ [画面] ──暗号化済みデータ──▶ [Supabase]   … 中身は「enc:v1:…」という読めない文字列
+   ▲
+   └─ 鍵（端末で初回だけ受け取り、取り出し不可の形で端末内に保管）── [goodbad-api / Render]
 ```
 
-## 8. 今後の拡張候補
+暗号化しないもの：Good/Bad の種別、日時、並び順、件数。
+これらは集計・絞り込みに使うためです。
+
+| 守れるケース | 守れないケース |
+|---|---|
+| Supabase のDBデータ・バックアップの漏えい | ログイン中の端末を他人に操作される |
+| Supabase アカウントの乗っ取り | Render と Supabase の両方を同時に乗っ取られる |
+| 設定ミスでテーブルが外部から読めてしまった場合 | AI要約のため Claude API に送る内容（送信時はHTTPSで暗号化） |
+
+### 鍵（ENCRYPTION_KEY）の作り方と保管 ★最重要
+1. PCのブラウザ（Chrome等）で何かのページを開き、**F12 → Console** を開きます
+2. `crypto.randomUUID() + crypto.randomUUID()` と入力して Enter を押します
+3. 表示された72文字（`"` の内側）が鍵です
+4. Render の goodbad-api → **Environment** に `ENCRYPTION_KEY` として保存します
+5. **同じ値をパスワード管理ソフトなど安全な場所に必ず控えます**
+
+- **鍵を失う、または変更すると、それまでのデータは二度と読めません**（Anthropic・Supabase・Render の誰にも復元できません）
+- 鍵をGitHub・メール・チャットに貼らないでください
+
+### 暗号化以外の対策
+| 対策 | 効果 |
+|---|---|
+| `ALLOWED_EMAILS` | 万一ほかのアカウントが作られても、鍵とAIを使わせない |
+| CSP（render.yaml） | 画面に悪意あるスクリプトが入り込んでも、外部へデータを送れなくする |
+| 取り出し不可の鍵 | 端末内の鍵は、プログラムからも取り出して持ち出すことができない |
+| 12時間で自動ログアウト | スマホの置き忘れ・共用PCでの見られ放題を防ぐ |
+| DB権限の締め付け | 未ログイン（anon）ではテーブルに一切触れない。他人の目標IDの紐付けも不可 |
+| 鍵配布のログ | 誰がいつ鍵を取得したかを Render の Logs に記録する |
+
+### アカウント自体の保護（必ず実施）
+Supabase・Render・GitHub・Anthropic の各アカウントで、**2段階認証を有効にしてください。**
+特に Supabase と Render の両方を乗っ取られると、暗号化の効果がなくなります。
+
+### 既存データの暗号化
+暗号化前に登録したデータは、新しい画面でログインしたときに**自動で暗号化**されます。
+完了すると「保存済みデータ ○件を暗号化しました」と表示されます。
+確認したい場合は、Supabase の Table Editor で `points` などを開いてください。`content` が `enc:v1:…` になっていれば完了です。
+
+## 8. ファイル構成
+```
+render.yaml                         Render の構成定義（2サービス一括作成・セキュリティヘッダー）
+supabase/schema.sql                 DB定義（テーブル・アクセス制御）
+supabase/migrate_002_encryption.sql 暗号化対応・権限の締め付け
+server/index.js                     APIサーバー（鍵の受け渡し・AI要約）
+src/cryptoCore.js                   暗号化の中核 ※画面・API共通
+src/crypto.js                       画面側の鍵管理・暗号化・既存データ移行
+src/App.jsx                         画面全体の枠・タブ切替・自動ログアウト
+src/pages/                          各画面（登録・記録・目標・レポート・設定）
+src/period.js                       期間（日/月/半期）の計算 ※画面・API共通
+src/styles.css                      デザイン（色は先頭の変数で一括変更）
+tests/                              期間計算・暗号化のテスト
+```
+
+## 9. 今後の拡張候補
 - 複数マネージャー対応（担当メンバー単位の権限）
 - 月初に前月レポートを自動作成（Render の Cron Job）
 - レポートの Word / PDF 出力
