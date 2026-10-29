@@ -1,8 +1,8 @@
 // 半期目標：メンバー×半期ごとに複数の目標を登録・編集・削除する
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase, errMsg } from '../supabase'
-import { MemberPicker, Pager, useGoals } from '../components'
-import { currentHalfKey, shiftHalf, halfLabel } from '../period'
+import { MemberPicker, Pager, useGoals, Tally } from '../components'
+import { currentHalfKey, shiftHalf, halfLabel, halfShortLabel, halfRange, toTs } from '../period'
 import { encRow } from '../crypto'
 // ※「前の半期からコピー」は暗号文のまま複製する（同じ鍵・同じ列なので復号できる）
 
@@ -29,7 +29,7 @@ export default function Goals({ members, memberId, setMemberId, notify }) {
       return notify(errMsg(e), 'error')
     }
     setBusy(false)
-    notify(editId ? '更新しました' : '追加しました')
+    notify(editId ? '変更を保存しました' : '目標を追加しました')
     setForm(blank); setEditId(null); reload()
   }
 
@@ -53,43 +53,74 @@ export default function Goals({ members, memberId, setMemberId, notify }) {
     notify('コピーしました'); reload()
   }
 
+  // この半期に各目標へ紐づいた Good/Bad の件数（暗号化していない列だけ読むので復号は不要）
+  const [linked, setLinked] = useState({})
+  useEffect(() => {
+    if (!memberId) return
+    let alive = true
+    const [from, to] = halfRange(half)
+    supabase.from('points').select('goal_id,kind').eq('member_id', memberId).not('goal_id', 'is', null)
+      .gte('occurred_at', toTs(from)).lt('occurred_at', toTs(to))
+      .then(({ data, error }) => {
+        if (!alive || error) return
+        const m = {}
+        data.forEach((p) => { m[p.goal_id] ??= { good: 0, bad: 0 }; m[p.goal_id][p.kind]++ })
+        setLinked(m)
+      })
+    return () => { alive = false }
+  }, [memberId, half, goals])
+
+  const who = members.find((m) => m.id === memberId)?.name ?? ''
+
   return (
     <>
-      <section className="card">
+      <section className="page-head">
         <MemberPicker members={members} memberId={memberId} setMemberId={setMemberId} />
-        <div style={{ marginTop: 12 }}>
-          <Pager title={halfLabel(half)} onPrev={() => setHalf(shiftHalf(half, -1))} onNext={() => setHalf(shiftHalf(half, 1))} />
-        </div>
+        <h1 className="page-title">{who}さんの目標</h1>
       </section>
 
-      <section className="card">
-        <h2>登録済みの目標</h2>
+      <section className="sheet flush">
+        <div style={{ padding: '12px 0 4px' }}>
+          <Pager title={halfShortLabel(half)} onPrev={() => setHalf(shiftHalf(half, -1))} onNext={() => setHalf(shiftHalf(half, 1))} />
+        </div>
         {goals.length === 0 ? (
           <div className="empty">
             この半期の目標はまだありません
-            <div><button className="btn small" style={{ marginTop: 10 }} onClick={copyPrev}>前の半期からコピー</button></div>
+            <div><button className="btn" onClick={copyPrev}>前の半期の目標をコピー</button></div>
           </div>
-        ) : goals.map((g, i) => (
-          <div className="entry" key={g.id}>
-            <div className="row">
-              <b className="grow">目標{i + 1}：{g.title}</b>
-              <button className="btn small" onClick={() => { setEditId(g.id); setForm({ title: g.title, description: g.description || '' }) }}>編集</button>
-              <button className="btn small danger" onClick={() => remove(g)}>削除</button>
-            </div>
-            {g.description && <div className="body muted">{g.description}</div>}
-          </div>
-        ))}
+        ) : goals.map((g, i) => {
+          const c = linked[g.id] || { good: 0, bad: 0 }
+          return (
+            <article className="goal" key={g.id}>
+              <span className="goal-no">目標{i + 1}</span>
+              <div className="goal-title">{g.title}</div>
+              {g.description && <div className="goal-desc">{g.description}</div>}
+              <div className="goal-tally">
+                <span>{c.good > 0 && <Tally count={c.good} kind="good" label="Good" size={18} />}<span className="num">Good {c.good}件</span></span>
+                <span>{c.bad > 0 && <Tally count={c.bad} kind="bad" label="Bad" size={18} />}<span className="num">Bad {c.bad}件</span></span>
+              </div>
+              <div className="goal-actions">
+                <button className="link" onClick={() => { setEditId(g.id); setForm({ title: g.title, description: g.description || '' }) }}>編集</button>
+                <button className="link danger" onClick={() => remove(g)}>削除</button>
+              </div>
+            </article>
+          )
+        })}
       </section>
 
-      <section className="card">
-        <h2>{editId ? '目標を編集' : '目標を追加'}</h2>
-        <label className="label">タイトル</label>
-        <input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="例）一次回答の平均時間を30分以内にする" />
-        <label className="label">詳細・達成基準（任意）</label>
-        <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="AIレポートはここも参考にして評価します" />
-        <div className="row" style={{ marginTop: 12, justifyContent: 'flex-end' }}>
+      <section className="sheet stack">
+        <h2 className="sheet-title" style={{ margin: 0 }}>{editId ? '目標を編集' : '目標を追加'}</h2>
+        <label className="field">
+          <span>目標</span>
+          <input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="例）一次回答の平均時間を30分以内にする" />
+        </label>
+        <label className="field">
+          <span>詳細・達成の基準</span>
+          <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="AIレポートは、ここに書いた基準も参考にして振り返ります" />
+        </label>
+        <div className="row" style={{ justifyContent: 'flex-end' }}>
           {editId && <button className="btn" onClick={() => { setEditId(null); setForm(blank) }}>キャンセル</button>}
-          <button className="btn primary" onClick={save} disabled={busy}>{editId ? '更新' : '追加'}</button>
+          <button className="btn primary" onClick={save} disabled={busy}>{editId ? '変更を保存' : '目標を追加'}</button>
         </div>
       </section>
     </>

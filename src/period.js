@@ -60,3 +60,5 @@ export const monthLabel = (key) => `${key.slice(0, 4)}年${+key.slice(5, 7)}月`
 export const halfLabel = (key) => `${key.slice(0, 4)}年度 ${key.endsWith('H1') ? '上期（4〜9月）' : '下期（10〜翌3月）'}`
 export const timeLabel = (ts) => { const p = jst(ts); return `${pad(p.hh)}:${pad(p.mm)}` }
 export const shortDate = (ts) => { const p = jst(ts); return `${p.m}/${p.d}（${WEEK[p.w]}）` }
+// 画面の見出し用（狭いスマホ幅でも1行に収まる短い表記）。AIへの指示には halfLabel を使う
+export const halfShortLabel = (key) => `${key.slice(0, 4)}年度 ${key.endsWith('H1') ? '上期' : '下期'}`

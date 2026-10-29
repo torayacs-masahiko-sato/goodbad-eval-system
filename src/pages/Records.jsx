@@ -1,10 +1,10 @@
 // 記録一覧：メンバーごとに 日別 / 月別 / 半期別 で表示。編集・削除もここで行う
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, errMsg } from '../supabase'
-import { MemberPicker, Pager, Seg } from '../components'
+import { MemberPicker, Pager, Seg, Score, MonthRhythm } from '../components'
 import {
   todayStr, currentMonthKey, currentHalfKey, dayRange, monthRange, halfRange, shiftDay, shiftMonth, shiftHalf,
-  dayLabel, monthLabel, halfLabel, jstDateStr, timeLabel, toTs, halfKeyOf, halfKeyOfMonth,
+  dayLabel, monthLabel, halfLabel, halfShortLabel, jstDateStr, timeLabel, toTs, halfKeyOf, halfKeyOfMonth,
 } from '../period'
 import { encRow, decRows } from '../crypto'
 
@@ -24,7 +24,7 @@ export default function Records({ members, memberId, setMemberId, notify }) {
     ? [...dayRange(day), dayLabel(day), halfKeyOf(+day.slice(0, 4), +day.slice(5, 7))]
     : mode === 'month'
       ? [...monthRange(month), monthLabel(month), halfKeyOfMonth(month)]
-      : [...halfRange(half), halfLabel(half), half]
+      : [...halfRange(half), halfShortLabel(half), half]
 
   const load = async () => {
     if (!memberId) return
@@ -78,74 +78,81 @@ export default function Records({ members, memberId, setMemberId, notify }) {
       })).eq('id', editing.id)
       if (error) throw error
     } catch (e) { return notify(errMsg(e), 'error') }
-    setEditing(null); notify('更新しました'); load()
+    setEditing(null); notify('変更を保存しました'); load()
+  }
+
+  const who = members.find((m) => m.id === memberId)?.name ?? ''
+  const goalsForDate = (ts) => {
+    const d = jstDateStr(ts)
+    return allGoals.filter((g) => g.period_key === halfKeyOf(+d.slice(0, 4), +d.slice(5, 7)))
   }
 
   return (
     <>
-      <section className="card">
+      <section className="page-head">
         <MemberPicker members={members} memberId={memberId} setMemberId={setMemberId} />
-        <div style={{ marginTop: 12 }}>
-          <Seg value={mode} onChange={setMode} options={[['day', '日別'], ['month', '月別'], ['half', '半期別']]} />
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <Pager title={title} onPrev={() => move(-1)} onNext={() => move(1)} nextDisabled={atLatest} />
+        <div className="row" style={{ justifyContent: 'space-between', gap: 12 }}>
+          <h1 className="page-title">{who}</h1>
+          <Seg label="表示する期間" value={mode} onChange={setMode} options={[['day', '日'], ['month', '月'], ['half', '半期']]} />
         </div>
       </section>
 
-      <section className="card">
-        <div className="stats">
-          <div className="stat"><b>{points.length}</b><span className="muted">合計</span></div>
-          <div className="stat good"><b>{good}</b><span className="muted">Good</span></div>
-          <div className="stat bad"><b>{points.length - good}</b><span className="muted">Bad</span></div>
-        </div>
-        <div className="row" style={{ marginTop: 12 }}>
-          <select className="grow" value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
-            <option value="all">Good/Bad すべて</option>
-            <option value="good">Goodのみ</option>
-            <option value="bad">Badのみ</option>
+      <section className="sheet stack">
+        <Pager title={title} onPrev={() => move(-1)} onNext={() => move(1)} nextDisabled={atLatest} />
+        <Score good={good} bad={points.length - good} />
+        {mode === 'month' && (
+          <MonthRhythm monthKey={month} points={points} today={todayStr()}
+            onPickDay={(d) => { setDay(d); setMode('day') }} />
+        )}
+      </section>
+
+      <section className="sheet flush" aria-label="記録の一覧">
+        <div className="row" style={{ padding: '12px 0 4px' }}>
+          <select className="grow" aria-label="Good/Badで絞り込み" value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
+            <option value="all">GoodとBad</option>
+            <option value="good">Goodだけ</option>
+            <option value="bad">Badだけ</option>
           </select>
-          <select className="grow" value={goalFilter} onChange={(e) => setGoalFilter(e.target.value)}>
-            <option value="">目標：すべて</option>
+          <select className="grow" aria-label="目標で絞り込み" value={goalFilter} onChange={(e) => setGoalFilter(e.target.value)}>
+            <option value="">すべての目標</option>
             {goalsOfView.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
           </select>
         </div>
-      </section>
 
-      <section className="card">
-        {loading ? <div className="empty">読み込み中…</div>
+        {loading ? <div className="empty">読み込んでいます…</div>
           : groups.length === 0 ? <div className="empty">この期間の記録はありません</div>
           : groups.map((grp) => (
-            <div className="daygroup" key={grp.d}>
-              {mode !== 'day' && <h3>{dayLabel(grp.d)}</h3>}
+            <div key={grp.d}>
+              {mode !== 'day' && <h3 className="day-head num">{dayLabel(grp.d)}</h3>}
               {grp.items.map((p) => editing?.id === p.id ? (
-                <div className="entry" key={p.id}>
-                  <div className="gb">
-                    <button className={`g ${editing.kind === 'good' ? 'on' : ''}`} onClick={() => setEditing({ ...editing, kind: 'good' })}>Good</button>
-                    <button className={`b ${editing.kind === 'bad' ? 'on' : ''}`} onClick={() => setEditing({ ...editing, kind: 'bad' })}>Bad</button>
+                <article className={`note ${editing.kind} editing stack`} key={p.id}>
+                  <div className="kind" role="group" aria-label="種類">
+                    <button type="button" className="good" aria-pressed={editing.kind === 'good'} onClick={() => setEditing({ ...editing, kind: 'good' })}><b>Good</b></button>
+                    <button type="button" className="bad" aria-pressed={editing.kind === 'bad'} onClick={() => setEditing({ ...editing, kind: 'bad' })}><b>Bad</b></button>
                   </div>
-                  <textarea style={{ marginTop: 8 }} value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} />
-                  <select style={{ marginTop: 8 }} value={editing.goal_id || ''} onChange={(e) => setEditing({ ...editing, goal_id: e.target.value })}>
-                    <option value="">— 目標なし —</option>
-                    {allGoals.filter((g) => g.period_key === halfKeyOf(+jstDateStr(p.occurred_at).slice(0, 4), +jstDateStr(p.occurred_at).slice(5, 7)))
-                      .map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
+                  <textarea className="ruled" aria-label="内容" value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} />
+                  <select aria-label="関連する目標" value={editing.goal_id || ''} onChange={(e) => setEditing({ ...editing, goal_id: e.target.value })}>
+                    <option value="">目標なし</option>
+                    {goalsForDate(p.occurred_at).map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
                   </select>
-                  <div className="row" style={{ marginTop: 8, justifyContent: 'flex-end' }}>
-                    <button className="btn small" onClick={() => setEditing(null)}>キャンセル</button>
-                    <button className="btn small primary" onClick={saveEdit}>保存</button>
+                  <div className="row" style={{ justifyContent: 'flex-end' }}>
+                    <button className="btn" onClick={() => setEditing(null)}>キャンセル</button>
+                    <button className="btn primary" onClick={saveEdit}>変更を保存</button>
                   </div>
-                </div>
+                </article>
               ) : (
-                <div className="entry" key={p.id}>
-                  <div className="row">
-                    <span className={`badge ${p.kind}`}>{p.kind === 'good' ? 'Good' : 'Bad'}</span>
-                    {p.goal_id && goalName.get(p.goal_id) && <span className="badge goal">{goalName.get(p.goal_id)}</span>}
-                    <span className="muted grow">{timeLabel(p.occurred_at)}</span>
-                    <button className="btn small" onClick={() => setEditing({ ...p })}>編集</button>
-                    <button className="btn small danger" onClick={() => remove(p)}>削除</button>
+                <article className={`note ${p.kind}`} key={p.id}>
+                  <div className="note-meta">
+                    <span className="note-kind">{p.kind === 'good' ? 'Good' : 'Bad'}</span>
+                    <span className="num">{timeLabel(p.occurred_at)}</span>
+                    <span className="note-actions">
+                      <button className="link" onClick={() => setEditing({ ...p })}>編集</button>
+                      <button className="link danger" onClick={() => remove(p)}>削除</button>
+                    </span>
                   </div>
-                  <div className="body">{p.content}</div>
-                </div>
+                  <div className="note-body">{p.content}</div>
+                  {p.goal_id && goalName.get(p.goal_id) && <div style={{ marginTop: 6 }}><span className="note-goal">目標：{goalName.get(p.goal_id)}</span></div>}
+                </article>
               ))}
             </div>
           ))}

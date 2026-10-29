@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { supabase, errMsg } from '../supabase'
 import { MemberPicker, Pager, Seg, MarkdownView } from '../components'
-import { currentMonthKey, currentHalfKey, shiftMonth, shiftHalf, monthLabel, halfLabel } from '../period'
+import { currentMonthKey, currentHalfKey, shiftMonth, shiftHalf, monthLabel, halfShortLabel } from '../period'
 import { decRow } from '../crypto'
 
 // Render 上の API サーバーのURL（末尾の / は除く）
@@ -46,7 +46,7 @@ export default function Reports({ members, memberId, setMemberId, notify }) {
   const [busy, setBusy] = useState('') // 実行中の説明文
 
   const key = type === 'monthly' ? month : half
-  const label = type === 'monthly' ? monthLabel(month) : halfLabel(half)
+  const label = type === 'monthly' ? monthLabel(month) : halfShortLabel(half)
 
   const load = async () => {
     if (!memberId) return
@@ -88,48 +88,54 @@ export default function Reports({ members, memberId, setMemberId, notify }) {
   }
 
   const copy = async () => {
-    try { await navigator.clipboard.writeText(report.summary); notify('コピーしました') }
+    try { await navigator.clipboard.writeText(report.summary); notify('本文をコピーしました') }
     catch { notify('コピーできませんでした。本文を長押しして選択してください', 'error') }
   }
 
+  const who = members.find((m) => m.id === memberId)?.name ?? ''
+
   return (
     <>
-      <section className="card">
-        <Seg value={type} onChange={setType} options={[['monthly', '月次レポート'], ['half', '半期レポート']]} />
-        <div style={{ marginTop: 12 }}>
-          {type === 'monthly'
-            ? <Pager title={label} onPrev={() => setMonth(shiftMonth(month, -1))} onNext={() => setMonth(shiftMonth(month, 1))} nextDisabled={month >= currentMonthKey()} />
-            : <Pager title={label} onPrev={() => setHalf(shiftHalf(half, -1))} onNext={() => setHalf(shiftHalf(half, 1))} nextDisabled={half >= currentHalfKey()} />}
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <MemberPicker members={members} memberId={memberId} setMemberId={setMemberId} />
+      <section className="page-head">
+        <MemberPicker members={members} memberId={memberId} setMemberId={setMemberId} />
+        <div className="row" style={{ justifyContent: 'space-between', gap: 12 }}>
+          <h1 className="page-title">{who}さんのレポート</h1>
+          <Seg label="レポートの種類" value={type} onChange={setType} options={[['monthly', '月次'], ['half', '半期']]} />
         </div>
       </section>
 
-      <section className="card">
+      <section className="sheet stack">
+        {type === 'monthly'
+          ? <Pager title={label} onPrev={() => setMonth(shiftMonth(month, -1))} onNext={() => setMonth(shiftMonth(month, 1))} nextDisabled={month >= currentMonthKey()} />
+          : <Pager title={label} onPrev={() => setHalf(shiftHalf(half, -1))} onNext={() => setHalf(shiftHalf(half, 1))} nextDisabled={half >= currentHalfKey()} />}
         <div className="row">
-          <button className="btn primary grow" onClick={runOne} disabled={!!busy}>{report ? '作り直す' : 'このメンバーのレポートを作成'}</button>
+          <button className="btn primary grow" onClick={runOne} disabled={!!busy}>{report ? 'レポートを作り直す' : 'レポートを作成'}</button>
           <button className="btn" onClick={runAll} disabled={!!busy}>全員分を作成</button>
         </div>
-        {busy && <p className="muted" style={{ marginTop: 10 }}>{busy}</p>}
-      </section>
-
-      <section className="card">
-        {loading ? <div className="empty">読み込み中…</div> : !report ? (
-          <div className="empty">この期間のレポートはまだありません</div>
-        ) : (
-          <>
-            <div className="row">
-              <span className="muted grow">
-                作成：{new Date(report.updated_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}／記録 {report.source_count}件をもとに要約
-              </span>
-              <button className="btn small" onClick={copy}>コピー</button>
-            </div>
-            <MarkdownView text={report.summary} />
-            <p className="muted" style={{ marginTop: 16 }}>※ AIによる要約です。評価に使う前に、元の記録と照らして内容を確認してください。</p>
-          </>
+        {busy && (
+          <div aria-live="polite">
+            <p className="muted" style={{ margin: 0 }}>{busy}</p>
+            <div className="progress" aria-hidden="true" />
+          </div>
         )}
       </section>
+
+      <article className="sheet">
+        {loading ? <div className="empty">読み込んでいます…</div> : !report ? (
+          <div className="empty">この期間のレポートはまだありません。記録をもとにAIが要約します。</div>
+        ) : (
+          <>
+            <div className="doc-meta">
+              <span className="grow num">
+                {new Date(report.updated_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', dateStyle: 'medium', timeStyle: 'short' })} 作成　記録{report.source_count}件から要約
+              </span>
+              <button className="link" onClick={copy}>本文をコピー</button>
+            </div>
+            <MarkdownView text={report.summary} />
+            <p className="doc-note">AIによる要約です。評価に使う前に、元の記録と照らして内容を確認してください。</p>
+          </>
+        )}
+      </article>
     </>
   )
 }

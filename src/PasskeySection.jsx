@@ -43,37 +43,37 @@ export default function PasskeySection({ notify, onChange }) {
   }
 
   return (
-    <section className="card">
-      <h2>パスキー（指紋・顔認証ログイン）</h2>
+    <section className="sheet">
+      <h2 className="sheet-title">パスキー（指紋・顔認証でログイン）</h2>
       {!supported ? (
-        <p className="muted">このブラウザはパスキーに対応していません。</p>
+        <p className="muted" style={{ marginTop: 0 }}>このブラウザはパスキーに対応していません。</p>
       ) : (
         <>
           <p className="muted" style={{ marginTop: 0 }}>
             使う端末（PC・スマホ）ごとに登録してください。iPhoneとMacなど、同じアカウントで同期される端末は1回の登録で使える場合があります。
           </p>
-          <button className="btn primary block" onClick={add} disabled={busy}>
-            {busy ? '登録中…' : '＋ このデバイスを登録する'}
+          <button className="btn primary" onClick={add} disabled={busy}>
+            {busy ? '登録しています…' : 'この端末を登録'}
           </button>
         </>
       )}
 
       <div style={{ marginTop: 8 }}>
-        {keys === null ? <div className="empty">読み込み中…</div>
-          : loadError ? <p style={{ color: 'var(--bad)', fontSize: 14 }}>{loadError}</p>
+        {keys === null ? <div className="empty">読み込んでいます…</div>
+          : loadError ? <p className="error-text">{loadError}</p>
           : keys.length === 0 ? <div className="empty">登録済みのパスキーはありません</div>
           : keys.map((k) => (
-            <div className="entry row" key={k.id}>
+            <div className="note row" key={k.id} style={{ paddingLeft: 0 }}>
               <div className="grow">
                 <b>{k.friendly_name || '名称なし'}</b>
-                <div className="muted">登録 {fmt(k.created_at)}／最終利用 {fmt(k.last_used_at)}</div>
+                <div className="muted num">登録 {fmt(k.created_at)}　最終利用 {fmt(k.last_used_at)}</div>
               </div>
-              <button className="btn small" onClick={() => rename(k)}>名前</button>
-              <button className="btn small danger" onClick={() => remove(k)}>削除</button>
+              <span className="note-actions"><button className="link" onClick={() => rename(k)}>名前を変更</button>
+              <button className="link danger" onClick={() => remove(k)}>削除</button></span>
             </div>
           ))}
       </div>
-      <p className="muted">端末を紛失・機種変更したときは、ここで古いパスキーを削除してください。パスワードでのログインは予備として引き続き使えます。</p>
+      <p className="muted" style={{ marginBottom: 0 }}>端末を紛失・機種変更したときは、ここで古いパスキーを削除してください。パスワードでのログインは予備として引き続き使えます。</p>
     </section>
   )
 }

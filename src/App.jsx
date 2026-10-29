@@ -9,6 +9,7 @@ import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import { passkeySupported, listPasskeys, registerPasskey, passkeyErrMsg } from './passkey'
 import { ensureKey, decRows, migratePlaintext } from './crypto'
+import { Icon, BrandMark } from './components'
 
 // 一定時間操作がなければ自動ログアウト（スマホの置き忘れ・共用PC対策）。
 // パスキーなら再ログインは数秒なので、短めでも業務に支障が出にくい
@@ -23,11 +24,11 @@ const isDismissed = () => { try { return localStorage.getItem(DISMISS_KEY) === '
 const setDismissed = () => { try { localStorage.setItem(DISMISS_KEY, '1') } catch { /* 保存できなくても問題なし */ } }
 
 const TABS = [
-  { id: 'add', label: '登録', ico: '＋' },
-  { id: 'records', label: '記録', ico: '☰' },
-  { id: 'goals', label: '目標', ico: '◎' },
-  { id: 'reports', label: 'レポート', ico: '✎' },
-  { id: 'settings', label: '設定', ico: '⚙' },
+  { id: 'add', label: '登録', ico: 'pen' },
+  { id: 'records', label: '記録', ico: 'list' },
+  { id: 'goals', label: '目標', ico: 'goal' },
+  { id: 'reports', label: 'レポート', ico: 'doc' },
+  { id: 'settings', label: '設定', ico: 'gear' },
 ]
 
 export default function App() {
@@ -120,27 +121,33 @@ export default function App() {
     catch (e) { const m = passkeyErrMsg(e); if (m) notify(m, 'error') }
   }
 
-  if (configError) return <div className="login card">{configError}</div>
-  if (session === undefined) return <div className="empty">読み込み中…</div>
+  if (configError) return <div className="gate"><div className="gate-card sheet">{configError}</div></div>
+  if (session === undefined) return <div className="gate"><div className="muted">読み込み中…</div></div>
   if (!session) return <Login />
   if (keyState !== 'ready') {
     return (
-      <div className="login card">
-        {keyState === 'loading' ? (
-          <>
-            <h2 style={{ fontSize: 16 }}>データ保護の準備中…</h2>
-            <p className="muted">この端末で初めて使うときは、サーバーの起動待ちで最大1分ほどかかります。</p>
-          </>
-        ) : (
-          <>
-            <h2 style={{ fontSize: 16 }}>データを開けませんでした</h2>
-            <p style={{ color: 'var(--bad)', fontSize: 14 }}>{keyState}</p>
-            <div className="row">
-              <button className="btn primary" onClick={() => setKeyTry((n) => n + 1)}>再試行</button>
-              <button className="btn" onClick={() => supabase.auth.signOut()}>ログアウト</button>
-            </div>
-          </>
-        )}
+      <div className="gate">
+        <div className="gate-card">
+          <div className="gate-brand"><BrandMark /></div>
+          <div className="sheet stack">
+            {keyState === 'loading' ? (
+              <>
+                <b>データを開いています</b>
+                <p className="muted" style={{ margin: 0 }}>この端末で初めて使うときは、サーバーの起動待ちで最大1分ほどかかります。</p>
+                <div className="progress" aria-hidden="true" />
+              </>
+            ) : (
+              <>
+                <b>データを開けませんでした</b>
+                <p className="error-text">{keyState}</p>
+                <div className="row">
+                  <button className="btn primary" onClick={() => setKeyTry((n) => n + 1)}>再試行</button>
+                  <button className="btn" onClick={() => supabase.auth.signOut()}>ログアウト</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     )
   }
@@ -150,21 +157,23 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <h1>GoodBad記録</h1>
-        <nav className="tabs">
+      <div className="side">
+        <header className="masthead">
+          <span className="brand"><BrandMark />GoodBad記録</span>
+        </header>
+        <nav className="nav" aria-label="メニュー">
           {TABS.map((t) => (
-            <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
-              <span className="ico" aria-hidden>{t.ico}</span>{t.label}
+            <button key={t.id} type="button" aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)}>
+              <Icon name={t.ico} />{t.label}
             </button>
           ))}
         </nav>
-      </header>
+      </div>
       <main className="main">
         {suggestPasskey && (
-          <div className="card" style={{ borderLeft: '4px solid var(--brand)' }}>
-            <b>🔑 パスキーを登録しませんか？</b>
-            <p className="muted" style={{ margin: '6px 0 10px' }}>次回からパスワード入力なしで、指紋・顔認証でログインできます。</p>
+          <div className="notice">
+            <b>次回から指紋・顔認証でログインできます</b>
+            <p className="muted" style={{ margin: 0 }}>この端末をパスキーに登録すると、パスワードの入力が不要になります。</p>
             <div className="row">
               <button className="btn primary" onClick={quickRegister}>この端末を登録</button>
               <button className="btn" onClick={() => { setDismissed(); setSuggestPasskey(false) }}>今はしない</button>
@@ -172,9 +181,9 @@ export default function App() {
           </div>
         )}
         {active.length === 0 && tab !== 'settings' ? (
-          <div className="card empty">
-            メンバーが未登録です。<br />
-            <button className="btn primary" style={{ marginTop: 12 }} onClick={() => setTab('settings')}>メンバーを登録する</button>
+          <div className="sheet empty">
+            <b style={{ color: 'var(--ink)', fontSize: 16 }}>最初に、記録するメンバーを登録しましょう</b>
+            <div><button className="btn primary" onClick={() => setTab('settings')}>メンバーを登録</button></div>
           </div>
         ) : (
           <>

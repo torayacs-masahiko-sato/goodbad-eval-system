@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import { supabase, errMsg } from '../supabase'
 import { passkeySupported, signInWithPasskey, passkeyErrMsg } from '../passkey'
+import { BrandMark } from '../components'
 
 export default function Login() {
   const supported = passkeySupported()
@@ -35,39 +36,50 @@ export default function Login() {
   }
 
   return (
-    <div className="login card">
-      <h2 style={{ fontSize: 18 }}>GoodBad記録 ログイン</h2>
+    <div className="gate">
+      <div className="gate-card">
+        <div className="gate-brand">
+          <BrandMark />
+          <h1>GoodBad記録</h1>
+          <p>気づいたその場で、メンバーの良かったこと・気になったことを書き留める手帳です。</p>
+        </div>
 
-      {supported ? (
-        <>
-          <button className="btn primary block" onClick={passkeyLogin} disabled={busy}>
-            {busy && !showPassword ? '認証中…' : '🔑 パスキーでログイン'}
-          </button>
-          <p className="muted" style={{ marginTop: 8 }}>指紋・顔認証・端末のPINでログインします</p>
-        </>
-      ) : (
-        <p className="muted">このブラウザはパスキーに対応していないため、パスワードでログインしてください。</p>
-      )}
+        <div className="sheet stack">
+          {supported ? (
+            <>
+              <button className="btn primary big" onClick={passkeyLogin} disabled={busy}>
+                {busy && !showPassword ? '認証しています…' : 'パスキーでログイン'}
+              </button>
+              <p className="muted" style={{ margin: 0, textAlign: 'center' }}>指紋・顔認証・端末のPINを使います</p>
+            </>
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>このブラウザはパスキーに対応していないため、パスワードでログインしてください。</p>
+          )}
 
-      {error && <p style={{ color: 'var(--bad)', fontSize: 14 }}>{error}</p>}
+          {error && <p className="error-text" role="alert">{error}</p>}
 
-      {supported && !showPassword && (
-        <button className="btn block" style={{ marginTop: 16 }} onClick={() => { setShowPassword(true); setError('') }}>
-          パスワードでログイン（初回・パスキー未登録の端末）
-        </button>
-      )}
+          {supported && !showPassword && (
+            <button className="link" style={{ justifySelf: 'center' }} onClick={() => { setShowPassword(true); setError('') }}>
+              初めての端末はパスワードでログイン
+            </button>
+          )}
 
-      {showPassword && (
-        <form onSubmit={passwordLogin} style={{ marginTop: supported ? 16 : 0, borderTop: supported ? '1px solid var(--line)' : 0, paddingTop: supported ? 4 : 0 }}>
-          <label className="label">メールアドレス</label>
-          <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <label className="label">パスワード</label>
-          <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          <button className="btn block" style={{ marginTop: 16 }} disabled={busy}>
-            {busy ? 'ログイン中…' : 'パスワードでログイン'}
-          </button>
-        </form>
-      )}
+          {showPassword && (
+            <form onSubmit={passwordLogin} className="stack">
+              {supported && <div className="divider">パスワードでログイン</div>}
+              <label className="field">
+                <span>メールアドレス</span>
+                <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              </label>
+              <label className="field">
+                <span>パスワード</span>
+                <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              </label>
+              <button className="btn big" disabled={busy}>{busy ? 'ログインしています…' : 'ログイン'}</button>
+            </form>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
