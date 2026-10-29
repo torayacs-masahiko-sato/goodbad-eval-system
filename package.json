@@ -10,6 +10,7 @@
     "test": "node --test tests/period.test.js tests/crypto.test.js"
   },
   "dependencies": {
+    "@fontsource/zen-kaku-gothic-new": "^5.3.1",
     "@supabase/supabase-js": "^2.118.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
