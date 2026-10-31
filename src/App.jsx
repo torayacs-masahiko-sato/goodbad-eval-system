@@ -17,6 +17,11 @@ const IDLE_LIMIT_MS = 12 * 60 * 60 * 1000 // 12時間
 const ACTIVE_KEY = 'goodbad.lastActive'
 const readLastActive = () => { try { return Number(localStorage.getItem(ACTIVE_KEY)) || 0 } catch { return 0 } }
 const writeLastActive = () => { try { localStorage.setItem(ACTIVE_KEY, String(Date.now())) } catch { /* 記録できなくても動作に影響なし */ } }
+const clearLastActive = () => { try { localStorage.removeItem(ACTIVE_KEY) } catch { /* 消せなくても動作に影響なし */ } }
+// 自動ログアウト。最終操作時刻も必ず消す
+// （消さないと、次にログインした瞬間に古い時刻を見て再びログアウトしてしまう：2026/11 修正）
+// scope: 'local' … この端末だけログアウト（他の端末のログインは維持）
+const idleSignOut = () => { clearLastActive(); supabase.auth.signOut({ scope: 'local' }) }
 
 // 「パスキー登録のおすすめ」を閉じたかどうか（この端末だけの記憶。使えない環境でも動作に影響しない）
 const DISMISS_KEY = 'goodbad.passkeyPromptDismissed'
@@ -52,12 +57,16 @@ export default function App() {
 
   const userId = session?.user?.id
 
+  // ログイン画面を表示している（＝ログアウト状態）なら、古い最終操作時刻は不要なので消す。
+  // 修正前のバージョンで古い時刻が残ってしまった端末も、これで自動的に復旧する
+  useEffect(() => { if (session === null) clearLastActive() }, [session])
+
   // ---------- 自動ログアウト ----------
   useEffect(() => {
     if (!userId) return
     const last = readLastActive()
     if (last && Date.now() - last > IDLE_LIMIT_MS) {
-      supabase.auth.signOut() // 端末内の暗号鍵は残す（次回ログインを早くするため。鍵だけではDBは読めない）
+      idleSignOut() // 端末内の暗号鍵は残す（次回ログインを早くするため。鍵だけではDBは読めない）
       return
     }
     writeLastActive()
@@ -65,7 +74,7 @@ export default function App() {
     const touch = () => { if (Date.now() - lastWrite > 60_000) { lastWrite = Date.now(); writeLastActive() } }
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return
-      if (Date.now() - readLastActive() > IDLE_LIMIT_MS) supabase.auth.signOut()
+      if (Date.now() - readLastActive() > IDLE_LIMIT_MS) idleSignOut()
       else touch()
     }
     window.addEventListener('pointerdown', touch)
