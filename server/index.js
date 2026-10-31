@@ -176,10 +176,20 @@ app.post('/api/generate-report', async (req, res) => {
         body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: 4000, system, messages: [{ role: 'user', content: userMsg }] }),
       })
       if (!r.ok) {
-        console.error('Claude API error', r.status, await r.text().catch(() => ''))
-        const hint = r.status === 401 ? '（APIキーが不正です）'
+        const raw = await r.text().catch(() => '')
+        console.error('Claude API error', r.status, raw)
+        // Claude API が返すエラー本文から原因を読み取り、画面に分かる言葉で出す
+        let apiMsg = ''
+        try { apiMsg = JSON.parse(raw)?.error?.message || '' } catch { /* 本文がJSONでない場合は番号のみ */ }
+        const hint =
+          /credit balance/i.test(apiMsg) ? '（Claude API のクレジット残高が不足しています。Anthropic Console の Billing でチャージしてください）'
+          : /max_tokens/i.test(apiMsg) ? '（出力の上限設定がモデルに合っていません。管理者に連絡してください）'
+          : r.status === 404 || /model/i.test(apiMsg) ? `（モデル名「${ANTHROPIC_MODEL}」が使えません。Render の ANTHROPIC_MODEL を確認してください）`
+          : r.status === 401 ? '（APIキーが不正です。Render の ANTHROPIC_API_KEY を確認してください）'
+          : r.status === 403 ? '（このAPIキーには利用権限がありません）'
           : r.status === 429 ? '（利用上限に達しています。少し待って再実行してください）'
-          : r.status >= 500 ? '（AI側の一時的な障害です。再実行してください）' : ''
+          : r.status >= 500 ? '（AI側の一時的な障害です。再実行してください）'
+          : apiMsg ? `（${apiMsg.slice(0, 200)}）` : ''
         return fail(502, `AIでの要約に失敗しました ${r.status}${hint}`)
       }
       ai = await r.json()
