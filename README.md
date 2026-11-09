@@ -12,7 +12,8 @@ PC・スマホのどちらからでも、ブラウザで URL を開くだけで�
 |---|---|
 | 登録 | メンバー選択 → Good/Bad → 内容 → 登録。いつでも何回でも登録できる。過去日付や関連目標も指定可 |
 | 記録 | メンバーごとに **日別／月別／半期別** で一覧。Good/Bad・目標で絞り込み、編集・削除 |
-| 目標 | メンバー×半期ごとに目標を複数登録。前の半期からコピー可 |
+| 目標 | メンバー×半期ごとに「期待していること・なってほしい姿」と目標（複数）を登録。前の半期から読み込み・コピー可 |
+| 面談 | 1on1・目標設定・中間・評価面談の内容と「次回までに」を記録。記録画面の上に前回の「次回までに」を表示 |
 | レポート | 月次／半期の AI 要約を作成・閲覧・コピー。全員分の一括作成も可 |
 | 設定 | メンバーの追加・名前変更・並べ替え・非表示、ログアウト |
 
@@ -56,6 +57,7 @@ PC・スマホのどちらからでも、ブラウザで URL を開くだけで�
 2. 左メニュー **SQL Editor** を開き、次の2つを**この順番で**、それぞれ全文貼り付けて **Run** します
    1. `supabase/schema.sql`
    2. `supabase/migrate_002_encryption.sql`（暗号化対応・権限の締め付け）
+   3. `supabase/migrate_003_expectations_meetings.sql`（期待・なってほしい姿、面談記録）
 3. **Authentication → Sign In / Providers → Email** で「Allow new users to sign up」を **オフ** にします。
    第三者が勝手にアカウントを作れないようにするためです
 4. **Authentication → Users → Add user** で、自分のメールアドレスとパスワードを登録します
@@ -79,6 +81,7 @@ PC・スマホのどちらからでも、ブラウザで URL を開くだけで�
 | goodbad-api | `ALLOWED_ORIGIN` | ひとまず `https://example.com`（後で直す） |
 | goodbad-api | `ENCRYPTION_KEY` | データ暗号化の鍵。作り方は「7. データ保護」を参照。**★必ず控えを保管** |
 | goodbad-api | `ALLOWED_EMAILS` | 自分のログイン用メールアドレス（任意だが推奨） |
+| goodbad-api | `ANTHROPIC_WORKSPACE_ID` | 任意。「not scoped to a workspace」エラーが出る場合のみ、ワークスペースID（`wrkspc_…`）を入力 |
 | goodbad-web | `VITE_SUPABASE_URL` | 手順1-5 の Project URL |
 | goodbad-web | `VITE_SUPABASE_ANON_KEY` | 手順1-5 の anon public キー |
 | goodbad-web | `VITE_API_URL` | ひとまず `https://example.com`（後で直す） |
@@ -159,10 +162,19 @@ npm test                            # 期間計算・暗号化のテスト
   バックアップのため、定期的に Table Editor から CSV エクスポートしておくと安心です。
 - レポート作成の待ち時間をなくしたい場合は、goodbad-api を Render の有料プラン（Starter）にするとスリープしなくなります。
 
+## 6.5 AIレポートに使われる情報
+レポートは次の情報をまとめて要約します。
+- 期間内の Good/Bad の記録
+- その半期の目標
+- **期待・なってほしい姿**
+- **期間内の面談記録**
+
+AIには「期待・なってほしい姿はマネージャーの願いであり、本人の実績ではない」と指示しています。評価の根拠は、記録と面談記録に限っています。
+
 ## 7. データ保護（暗号化とその他の対策）
 
 ### 暗号化の仕組み
-氏名・メモ・目標・記録の内容・AIレポートは、**画面側で暗号化してから** Supabase に保存します（AES-256-GCM）。
+氏名・メモ・目標・期待・なってほしい姿・記録の内容・面談記録・AIレポートは、**画面側で暗号化してから** Supabase に保存します（AES-256-GCM）。
 暗号を解く鍵は Supabase ではなく **Render（goodbad-api）の環境変数** に置いています。
 そのため、DBの中身が丸ごと漏れても、Render の鍵がなければ読めません。
 
@@ -172,7 +184,7 @@ npm test                            # 期間計算・暗号化のテスト
    └─ 鍵（端末で初回だけ受け取り、取り出し不可の形で端末内に保管）── [goodbad-api / Render]
 ```
 
-暗号化しないもの：Good/Bad の種別、日時、並び順、件数。
+暗号化しないもの：Good/Bad の種別、面談の種類、日時、並び順、件数。
 これらは集計・絞り込みに使うためです。
 
 | 守れるケース | 守れないケース |
@@ -215,11 +227,14 @@ Supabase・Render・GitHub・Anthropic の各アカウントで、**2段階認�
 render.yaml                         Render の構成定義（2サービス一括作成・セキュリティヘッダー）
 supabase/schema.sql                 DB定義（テーブル・アクセス制御）
 supabase/migrate_002_encryption.sql 暗号化対応・権限の締め付け
+supabase/migrate_003_expectations_meetings.sql 期待・なってほしい姿、面談記録のテーブル
 server/index.js                     APIサーバー（鍵の受け渡し・AI要約）
 src/cryptoCore.js                   暗号化の中核 ※画面・API共通
 src/crypto.js                       画面側の鍵管理・暗号化・既存データ移行
 src/App.jsx                         画面全体の枠・タブ切替・自動ログアウト
-src/pages/                          各画面（登録・記録・目標・レポート・設定）
+src/pages/                          各画面（登録・記録・目標・面談・レポート・設定）
+src/ExpectationSection.jsx          目標画面の「期待・なってほしい姿」欄
+src/labels.js                       面談の種類などの表示名 ※画面・API共通
 src/period.js                       期間（日/月/半期）の計算 ※画面・API共通
 src/styles.css                      デザイン（観察手帳がテーマ。色は先頭の変数で一括変更／Good・Badの色は色覚多様性チェック済み）
 tests/                              期間計算・暗号化のテスト

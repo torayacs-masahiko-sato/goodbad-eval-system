@@ -24,6 +24,8 @@ services:
         sync: false
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5-5
+      - key: ANTHROPIC_WORKSPACE_ID   # 任意：ワークスペースに紐づかないAPIキーの場合のみ（wrkspc_…）
+        sync: false
       - key: ALLOWED_ORIGIN     # 画面(goodbad-web)のURL。初回作成後に入力
         sync: false
       - key: ENCRYPTION_KEY     # データ暗号化の鍵（32文字以上）。★紛失・変更するとデータが読めなくなる。必ず控えを保管
