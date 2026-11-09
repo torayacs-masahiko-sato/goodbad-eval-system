@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import QuickAdd from './pages/QuickAdd'
 import Records from './pages/Records'
 import Goals from './pages/Goals'
+import Meetings from './pages/Meetings'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import { passkeySupported, listPasskeys, registerPasskey, passkeyErrMsg } from './passkey'
@@ -32,6 +33,7 @@ const TABS = [
   { id: 'add', label: '登録', ico: 'pen' },
   { id: 'records', label: '記録', ico: 'list' },
   { id: 'goals', label: '目標', ico: 'goal' },
+  { id: 'meetings', label: '面談', ico: 'talk' },
   { id: 'reports', label: 'レポート', ico: 'doc' },
   { id: 'settings', label: '設定', ico: 'gear' },
 ]
@@ -199,6 +201,7 @@ export default function App() {
             {tab === 'add' && <QuickAdd {...shared} />}
             {tab === 'records' && <Records {...shared} />}
             {tab === 'goals' && <Goals {...shared} />}
+            {tab === 'meetings' && <Meetings {...shared} />}
             {tab === 'reports' && <Reports {...shared} />}
             {tab === 'settings' && <Settings allMembers={members} reload={loadMembers} notify={notify} session={session} onPasskeyChange={checkPasskeys} />}
           </>

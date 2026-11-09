@@ -68,7 +68,7 @@ button { cursor: pointer; }
 /* 下部ナビ（スマホ）：親指が届く位置 */
 .nav {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
-  display: grid; grid-template-columns: repeat(5, 1fr);
+  display: grid; grid-template-columns: repeat(6, 1fr);
   background: color-mix(in srgb, var(--sheet) 92%, transparent);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid var(--rule); padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
@@ -301,3 +301,23 @@ textarea.ruled {
   .note::before, .rhythm-day .up, .rhythm-day .down { background: CanvasText; }
   .tally path { stroke: CanvasText; }
 }
+
+/* ---------- 期待・なってほしい姿 ---------- */
+/* 目標より上位の考え方なので、藍色の帯で区別する */
+.vision { border-left: 4px solid var(--indigo); border-radius: 6px var(--r-sheet) var(--r-sheet) 6px; }
+.vision-list { margin: 0; display: grid; gap: 14px; }
+.vision-list dt { font-size: 13px; font-weight: 700; color: var(--ink-2); letter-spacing: .04em; }
+.vision-list dd { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 40em; line-height: 1.9; }
+
+/* ---------- 面談記録 ---------- */
+.meeting { padding: 16px 0; border-bottom: 1px solid var(--rule-soft); display: grid; gap: 6px; }
+.meeting:last-child { border-bottom: 0; }
+.meeting-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.meeting-date { font-weight: 700; font-size: 15px; }
+.meeting-kind { font-size: 12px; font-weight: 700; color: var(--indigo); background: color-mix(in srgb, var(--indigo) 10%, transparent); border-radius: 6px; padding: 1px 8px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .meeting-kind { color: var(--ink); background: var(--rule-soft); } }
+.meeting-body { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 40em; line-height: 1.9; }
+.meeting-next { border-radius: 10px; background: var(--rule-soft); padding: 10px 14px; max-width: 40em; }
+.meeting-next b { display: block; font-size: 12px; color: var(--ink-2); letter-spacing: .04em; }
+.meeting-next p { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.carry { border: 1px dashed var(--rule); background: none; }

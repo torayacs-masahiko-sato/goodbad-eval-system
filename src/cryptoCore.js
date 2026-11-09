@@ -19,6 +19,8 @@ export const FIELDS = {
   goals: ['title', 'description'],
   points: ['content'],
   reports: ['summary'],
+  expectations: ['expectation', 'vision'],
+  meetings: ['content', 'next_actions'],
 }
 
 // 暗号化前の文字数上限（DB側の制限は暗号文の長さになるため、ここで元の文字数を確認する）
@@ -29,8 +31,12 @@ export const LIMITS = {
   'goals.description': 2000,
   'points.content': 2000,
   'reports.summary': 50000,
+  'expectations.expectation': 3000,
+  'expectations.vision': 3000,
+  'meetings.content': 8000,
+  'meetings.next_actions': 3000,
 }
-const LABELS = { 'members.name': '氏名', 'members.note': 'メモ', 'goals.title': '目標タイトル', 'goals.description': '目標の詳細', 'points.content': '内容' }
+const LABELS = { 'members.name': '氏名', 'members.note': 'メモ', 'goals.title': '目標タイトル', 'goals.description': '目標の詳細', 'points.content': '内容', 'expectations.expectation': '期待していること', 'expectations.vision': 'なってほしい姿', 'meetings.content': '面談の内容', 'meetings.next_actions': '次回までに' }
 
 export const UNREADABLE = '［復号できません：暗号鍵が違う可能性があります］'
 

@@ -1,9 +1,10 @@
-// 半期目標：メンバー×半期ごとに複数の目標を登録・編集・削除する
+// 目標画面：メンバー×半期ごとの「期待・なってほしい姿」と、半期目標（複数）を登録・編集・削除する
 import { useEffect, useState } from 'react'
 import { supabase, errMsg } from '../supabase'
 import { MemberPicker, Pager, useGoals, Tally } from '../components'
 import { currentHalfKey, shiftHalf, halfLabel, halfShortLabel, halfRange, toTs } from '../period'
 import { encRow } from '../crypto'
+import ExpectationSection from '../ExpectationSection'
 // ※「前の半期からコピー」は暗号文のまま複製する（同じ鍵・同じ列なので復号できる）
 
 const blank = { title: '', description: '' }
@@ -77,12 +78,13 @@ export default function Goals({ members, memberId, setMemberId, notify }) {
       <section className="page-head">
         <MemberPicker members={members} memberId={memberId} setMemberId={setMemberId} />
         <h1 className="page-title">{who}さんの目標</h1>
+        <Pager title={halfShortLabel(half)} onPrev={() => setHalf(shiftHalf(half, -1))} onNext={() => setHalf(shiftHalf(half, 1))} />
       </section>
 
+      {memberId && <ExpectationSection memberId={memberId} who={who} half={half} notify={notify} />}
+
       <section className="sheet flush">
-        <div style={{ padding: '12px 0 4px' }}>
-          <Pager title={halfShortLabel(half)} onPrev={() => setHalf(shiftHalf(half, -1))} onNext={() => setHalf(shiftHalf(half, 1))} />
-        </div>
+        <h2 className="sheet-title" style={{ margin: '18px 0 0' }}>半期目標</h2>
         {goals.length === 0 ? (
           <div className="empty">
             この半期の目標はまだありません
