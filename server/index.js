@@ -13,6 +13,7 @@
 //   ALLOWED_ORIGIN                   … 画面のURL。カンマ区切りで複数可（必須）
 //   ALLOWED_EMAILS                   … 任意。設定すると、このメールアドレスのユーザーだけが鍵とAIを使える
 //   ANTHROPIC_MODEL                  … 任意。未設定なら claude-sonnet-5-5
+//   ANTHROPIC_WORKSPACE_ID           … 任意。ワークスペースに紐づかないAPIキーを使う場合に必須（wrkspc_ で始まるID）
 //   PORT                             … Render が自動設定
 //
 // 鍵を Supabase ではなくここ(Render)に置く理由：
@@ -23,12 +24,13 @@ import express from 'express'
 import { createClient } from '@supabase/supabase-js'
 import { halfKeyOfMonth, halfRange, monthRange, monthLabel, halfLabel, jstDateStr, toTs } from '../src/period.js'
 import { deriveKeyBytes, importKey, bytesToB64, decryptRows, encryptText } from '../src/cryptoCore.js'
+import { meetingKindLabel } from '../src/labels.js'
 
 // 「/rest/v1/」など余分なパスが付いていても動くよう、https://xxxx.supabase.co の部分だけを使う
 const SUPABASE_URL = (() => { try { return new URL(process.env.SUPABASE_URL.trim()).origin } catch { return process.env.SUPABASE_URL } })()
 const {
   SUPABASE_ANON_KEY, ANTHROPIC_API_KEY, ENCRYPTION_KEY,
-  ANTHROPIC_MODEL = 'claude-sonnet-5-5', ALLOWED_ORIGIN = '', ALLOWED_EMAILS = '', PORT = 3001,
+  ANTHROPIC_MODEL = 'claude-sonnet-5-5', ANTHROPIC_WORKSPACE_ID = '', ALLOWED_ORIGIN = '', ALLOWED_EMAILS = '', PORT = 3001,
 } = process.env
 
 // 起動時に設定漏れを検知してログに出す（Render の Logs で確認できる）
@@ -160,11 +162,27 @@ app.post('/api/generate-report', async (req, res) => {
       .eq('member_id', member_id).gte('occurred_at', toTs(from)).lt('occurred_at', toTs(to))
       .order('occurred_at').limit(MAX_POINTS)
     if (pErr) throw new Error(`記録取得失敗: ${pErr.message}`)
-    if (!pointRows.length) return fail(400, 'この期間の記録が1件もないため、レポートを作成できません')
     const points = await decryptRows(dataKey, 'points', pointRows)
 
+    // 期待・なってほしい姿（その半期の1件）と、期間内の面談記録
+    // 移行003のSQLが未実行でテーブルが無い場合は、無いものとして続行する（レポート作成自体は止めない）
+    const missingTable = (e) => e && (e.code === '42P01' || e.code === 'PGRST205')
+    const { data: expRow, error: eErr } = await sb.from('expectations').select('expectation,vision')
+      .eq('member_id', member_id).eq('period_key', halfKey).maybeSingle()
+    if (eErr && !missingTable(eErr)) throw new Error(`期待の取得失敗: ${eErr.message}`)
+    if (missingTable(eErr)) console.warn('[注意] expectations テーブルがありません。migrate_003 を実行してください')
+    const [expectation] = expRow ? await decryptRows(dataKey, 'expectations', [expRow]) : [null]
+
+    const { data: mtgRows, error: mtErr } = await sb.from('meetings').select('met_on,kind,content,next_actions')
+      .eq('member_id', member_id).gte('met_on', from).lt('met_on', to).order('met_on')
+    if (mtErr && !missingTable(mtErr)) throw new Error(`面談記録の取得失敗: ${mtErr.message}`)
+    if (missingTable(mtErr)) console.warn('[注意] meetings テーブルがありません。migrate_003 を実行してください')
+    const meetings = await decryptRows(dataKey, 'meetings', mtgRows || [])
+
+    if (!points.length && !meetings.length) return fail(400, 'この期間の記録・面談記録が1件もないため、レポートを作成できません')
+
     // 4) プロンプト作成
-    const { system, user: userMsg } = buildPrompt({ member, report_type, period_key, goals, points })
+    const { system, user: userMsg } = buildPrompt({ member, report_type, period_key, goals, points, expectation, meetings })
 
     // 5) Claude API 呼び出し（タイムアウト付き）
     let ai
@@ -172,7 +190,11 @@ app.post('/api/generate-report', async (req, res) => {
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         signal: AbortSignal.timeout(CLAUDE_TIMEOUT_MS),
-        headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        headers: {
+          'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json',
+          // ワークスペースに紐づかないAPIキーの場合、どのワークスペースで使うかをここで指定する
+          ...(ANTHROPIC_WORKSPACE_ID.trim() ? { 'anthropic-workspace-id': ANTHROPIC_WORKSPACE_ID.trim() } : {}),
+        },
         body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: 4000, system, messages: [{ role: 'user', content: userMsg }] }),
       })
       if (!r.ok) {
@@ -182,7 +204,8 @@ app.post('/api/generate-report', async (req, res) => {
         let apiMsg = ''
         try { apiMsg = JSON.parse(raw)?.error?.message || '' } catch { /* 本文がJSONでない場合は番号のみ */ }
         const hint =
-          /credit balance/i.test(apiMsg) ? '（Claude API のクレジット残高が不足しています。Anthropic Console の Billing でチャージしてください）'
+          /workspace/i.test(apiMsg) ? '（このAPIキーはワークスペースに紐づいていません。Render の ANTHROPIC_WORKSPACE_ID にワークスペースID（wrkspc_…）を設定するか、ワークスペース専用のAPIキーに差し替えてください）'
+          : /credit balance/i.test(apiMsg) ? '（Claude API のクレジット残高が不足しています。Anthropic Console の Billing でチャージしてください）'
           : /max_tokens/i.test(apiMsg) ? '（出力の上限設定がモデルに合っていません。管理者に連絡してください）'
           : r.status === 404 || /model/i.test(apiMsg) ? `（モデル名「${ANTHROPIC_MODEL}」が使えません。Render の ANTHROPIC_MODEL を確認してください）`
           : r.status === 401 ? '（APIキーが不正です。Render の ANTHROPIC_API_KEY を確認してください）'
@@ -216,7 +239,7 @@ app.post('/api/generate-report', async (req, res) => {
   }
 })
 
-export function buildPrompt({ member, report_type, period_key, goals, points }) {
+export function buildPrompt({ member, report_type, period_key, goals, points, expectation = null, meetings = [] }) {
   const goalTitle = new Map(goals.map((g) => [g.id, g.title]))
   const goalText = goals.length
     ? goals.map((g, i) => `目標${i + 1}: ${g.title}${g.description ? `\n  詳細: ${g.description}` : ''}`).join('\n')
@@ -226,26 +249,37 @@ export function buildPrompt({ member, report_type, period_key, goals, points }) 
     const g = p.goal_id && goalTitle.get(p.goal_id) ? ` [目標: ${goalTitle.get(p.goal_id)}]` : ''
     return `- ${jstDateStr(p.occurred_at).replaceAll('-', '/')} ${p.kind === 'good' ? 'Good' : 'Bad'}${g}: ${String(p.content).replace(/\s+/g, ' ')}`
   }).join('\n')
+  const oneLine = (t) => String(t).replace(/\s+/g, ' ')
+  const expText = expectation && (expectation.expectation || expectation.vision)
+    ? `期待していること: ${expectation.expectation ? oneLine(expectation.expectation) : '（未入力）'}\nなってほしい姿: ${expectation.vision ? oneLine(expectation.vision) : '（未入力）'}`
+    : '（この半期の期待・なってほしい姿は未登録）'
+  const mtgText = meetings.length
+    ? meetings.map((m) => `- ${String(m.met_on).replaceAll('-', '/')} ${meetingKindLabel(m.kind)}: ${oneLine(m.content)}${m.next_actions ? `\n  次回までに: ${oneLine(m.next_actions)}` : ''}`).join('\n')
+    : '（この期間の面談記録なし）'
   const label = report_type === 'monthly' ? monthLabel(period_key) : halfLabel(period_key)
   const kindName = report_type === 'monthly' ? '月次レポート' : '半期レポート'
 
   const system =
     'あなたは管理職の部下育成を支援するアシスタントです。' +
-    'マネージャーが記録した日々の観察メモ（Good/Bad）を、評価面談や振り返りに使えるレポートにまとめます。\n' +
+    'マネージャーが記録した日々の観察メモ（Good/Bad）と面談記録を、評価面談や振り返りに使えるレポートにまとめます。\n' +
     '守ること:\n' +
     '- 記録に書かれた事実だけを根拠にする。書かれていない出来事・性格・健康・私生活などを推測しない\n' +
     '- 具体例を挙げるときは日付を添える\n' +
     '- Badは人格ではなく行動として扱い、改善のための建設的な表現にする\n' +
     '- 記録が少ない目標は「記録が少なく判断材料が不足」と明記する\n' +
+    '- 「期待・なってほしい姿」はマネージャーの願いであり、本人の実績ではない。実績の根拠は記録と面談記録だけにする\n' +
+    '- 面談で決めた「次回までに」がその後の記録で実行されたか分かる場合は触れる。分からない場合は推測しない\n' +
     '- 日本語で、Markdownの見出しと箇条書きを使う'
   const user =
     `対象者: ${member.name}\n期間: ${label}\n記録件数: ${points.length}件（Good ${good} / Bad ${points.length - good}）\n` +
     (points.length >= MAX_POINTS ? `※記録が多いため先頭${MAX_POINTS}件のみ\n` : '') +
-    `\n## 半期目標\n${goalText}\n\n## 記録\n${records}\n\n` +
+    `\n## マネージャーの期待・なってほしい姿\n${expText}\n\n## 半期目標\n${goalText}\n\n## 記録\n${records || '（この期間のGood/Bad記録なし）'}\n\n## 面談記録\n${mtgText}\n\n` +
     `上記をもとに${kindName}を作成してください。構成:\n` +
     '1. 総評（3〜4行）\n2. 目標ごとの振り返り（達成に向けた良い点・課題・根拠となる記録）\n' +
-    '3. 目標以外で目立ったGood\n4. 改善が望まれる点\n' +
-    (report_type === 'monthly' ? '5. 来月に意識してほしいこと（2〜3点）' : '5. 次の半期に向けた提案（目標設定のヒントを含む）')
+    '3. 期待・なってほしい姿に対する現在地（近づいている点・まだ距離がある点。未登録なら省略）\n' +
+    '4. 目標以外で目立ったGood\n5. 改善が望まれる点\n' +
+    '6. 面談での合意事項とその後（面談記録がなければ省略）\n' +
+    (report_type === 'monthly' ? '7. 来月に意識してほしいこと（2〜3点）' : '7. 次の半期に向けた提案（目標設定と期待の見直しのヒントを含む）')
   return { system, user }
 }
 
