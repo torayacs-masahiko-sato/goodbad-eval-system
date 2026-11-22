@@ -1,4 +1,4 @@
-# GoodBad記録（メンバー評価ポイント管理システム）
+# キヅキ帳（メンバー評価ポイント管理システム）
 
 マネージャーが、メンバーの日々の Good／Bad を気づいたときにすぐ記録するためのWebシステムです。
 記録は半期目標に沿って振り返ることができ、月次・半期レポートはAIが自動で要約します。
@@ -15,10 +15,19 @@ PC・スマホのどちらからでも、ブラウザで URL を開くだけで�
 | 目標 | メンバー×半期ごとに「期待していること・なってほしい姿」と目標（複数）を登録。前の半期から読み込み・コピー可 |
 | 面談 | 1on1・目標設定・中間・評価面談の内容と「次回までに」を記録。記録画面の上に前回の「次回までに」を表示 |
 | レポート | 月次／半期の AI 要約を作成・閲覧・コピー。全員分の一括作成も可 |
-| 設定 | メンバーの追加・名前変更・並べ替え・非表示、ログアウト |
+| 設定 | メンバーの追加・名前変更・並べ替え・非表示、**年度の開始月**、ログアウト |
 
-半期は **上期＝4〜9月、下期＝10〜翌3月**（日本時間）です。
-変更する場合は `src/period.js` を直してください。画面とAPIサーバーの両方がこのファイルを使っています。
+半期は、**年度の開始月から6か月ずつ**で区切ります（日本時間）。開始月は **設定 → 年度と半期** で変えられます。
+
+| 開始月 | 上期 | 下期 |
+|---|---|---|
+| 4月（初期値） | 4〜9月 | 10〜翌3月 |
+| 1月 | 1〜6月 | 7〜12月 |
+| 10月 | 10〜翌3月 | 翌4〜9月 |
+
+> ⚠ 開始月は、**新しい年度が始まる前**に変えるのがおすすめです。
+> 目標・期待・半期レポートは「2026年度 下期」のような半期の名前で保存されているため、途中で変えると、同じ名前の半期が指す月がずれます。
+> 日々の記録と面談記録は日付で保存しているので、影響はありません。
 
 ## 2. 仕組み（全体像）
 
@@ -54,10 +63,13 @@ PC・スマホのどちらからでも、ブラウザで URL を開くだけで�
 
 ### 手順1：Supabase（DB・ログイン）
 1. Supabase で New project を作成します。**Region は Tokyo（Northeast Asia）** を選んでください
-2. 左メニュー **SQL Editor** を開き、次の2つを**この順番で**、それぞれ全文貼り付けて **Run** します
+2. 左メニュー **SQL Editor** を開き、次の4つを**この順番で**、それぞれ全文貼り付けて **Run** します
    1. `supabase/schema.sql`
    2. `supabase/migrate_002_encryption.sql`（暗号化対応・権限の締め付け）
    3. `supabase/migrate_003_expectations_meetings.sql`（期待・なってほしい姿、面談記録）
+   4. `supabase/migrate_004_settings.sql`（年度の開始月の設定）
+
+   すでに使っている環境を更新する場合は、まだ実行していないファイルだけを実行してください（何度実行しても壊れません）。
 3. **Authentication → Sign In / Providers → Email** で「Allow new users to sign up」を **オフ** にします。
    第三者が勝手にアカウントを作れないようにするためです
 4. **Authentication → Users → Add user** で、自分のメールアドレスとパスワードを登録します
@@ -102,7 +114,7 @@ URL はどちらも末尾の `/` なしで入力してください。
 
 | 項目 | 入力内容 |
 |---|---|
-| Relying Party Display Name | `GoodBad記録` |
+| Relying Party Display Name | `キヅキ帳` |
 | Relying Party ID | goodbad-web のホスト名だけ（例：`goodbad-web-xxxx.onrender.com`）。`https://` や末尾の `/` は付けません |
 | Relying Party Origins | goodbad-web のURL（例：`https://goodbad-web-xxxx.onrender.com`） |
 
@@ -131,6 +143,19 @@ cp .env.example .env                # 値を書き換える
 npm install && npm run dev          # http://localhost:5173
 npm test                            # 期間計算・暗号化のテスト
 ```
+
+### デモモード（架空のデータで画面を見る）
+Supabase や APIサーバーを用意しなくても、架空のデータで全画面を操作できます。
+画面の確認や、紹介用のスクリーンショット撮影に使えます。
+
+```bash
+npm install
+npm run demo                        # http://localhost:5173 を開く
+                                    # ログイン画面を見るときは http://localhost:5173/?login
+```
+- データはメモリ上にだけあり、ページを再読み込みすると元に戻ります（どこにも保存・送信しません）
+- AIレポートは作成済みのサンプルを1件表示します（新しく作成はできません）
+- 仕組み：`vite.demo.config.js` が、Supabase・暗号化・パスキーの部品を `demo/` フォルダの代わりの部品に差し替えます。本番用のビルド（`npm run build`）には含まれません
 
 ## 5. エラー時の挙動
 
@@ -228,6 +253,7 @@ render.yaml                         Render の構成定義（2サービス一括
 supabase/schema.sql                 DB定義（テーブル・アクセス制御）
 supabase/migrate_002_encryption.sql 暗号化対応・権限の締め付け
 supabase/migrate_003_expectations_meetings.sql 期待・なってほしい姿、面談記録のテーブル
+supabase/migrate_004_settings.sql   利用者ごとの設定（年度の開始月）
 server/index.js                     APIサーバー（鍵の受け渡し・AI要約）
 src/cryptoCore.js                   暗号化の中核 ※画面・API共通
 src/crypto.js                       画面側の鍵管理・暗号化・既存データ移行
@@ -235,8 +261,11 @@ src/App.jsx                         画面全体の枠・タブ切替・自動�
 src/pages/                          各画面（登録・記録・目標・面談・レポート・設定）
 src/ExpectationSection.jsx          目標画面の「期待・なってほしい姿」欄
 src/labels.js                       面談の種類などの表示名 ※画面・API共通
-src/period.js                       期間（日/月/半期）の計算 ※画面・API共通
-src/styles.css                      デザイン（観察手帳がテーマ。色は先頭の変数で一括変更／Good・Badの色は色覚多様性チェック済み）
+src/period.js                       期間（日/月/半期）の計算。年度の開始月に対応 ※画面・API共通
+src/brand.js                        アプリの名前と説明文（名前を変えるときはここと index.html の <title>）
+src/styles.css                      デザイン（「観察野帳」がテーマ。色・書体は先頭の変数で一括変更／Good・Badの色は色覚多様性チェック済み）
+demo/                               デモモード用の架空データと代わりの部品
+vite.demo.config.js                 デモモードの設定
 tests/                              期間計算・暗号化のテスト
 ```
 
