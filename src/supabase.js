@@ -23,5 +23,11 @@ export function errMsg(e) {
   if (/Failed to fetch|NetworkError/i.test(m)) return '通信できませんでした。電波状況を確認して再度お試しください'
   if (/JWT|expired/i.test(m)) return 'ログインの有効期限が切れました。再ログインしてください'
   if (/Invalid login credentials/i.test(m)) return 'メールアドレスまたはパスワードが違います'
+  // テーブルが無い＝DB更新用SQL（supabase/migrate_00X_*.sql）が未実行
+  const table = m.match(/Could not find the table '(?:public\.)?([\w]+)'/i) || (e.code === '42P01' && m.match(/relation "(?:public\.)?([\w]+)"/))
+  if (table || e.code === 'PGRST205') {
+    const sql = { expectations: 'migrate_003_expectations_meetings.sql', meetings: 'migrate_003_expectations_meetings.sql' }[table?.[1]]
+    return `データベースの更新が済んでいません。Supabase の SQL Editor で ${sql || 'supabase フォルダ内の未実行のSQL'} を実行してください（READMEの手順1）`
+  }
   return m
 }

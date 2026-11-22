@@ -4,6 +4,8 @@ import { createRoot } from 'react-dom/client'
 import '@fontsource/zen-kaku-gothic-new/400.css'
 import '@fontsource/zen-kaku-gothic-new/500.css'
 import '@fontsource/zen-kaku-gothic-new/700.css'
+// 見出し・数字用の明朝体（野帳に万年筆で書いたような印象）
+import '@fontsource/shippori-mincho-b1/800.css'
 import App from './App.jsx'
 import './styles.css'
 

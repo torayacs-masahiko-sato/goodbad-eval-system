@@ -11,6 +11,8 @@ import Settings from './pages/Settings'
 import { passkeySupported, listPasskeys, registerPasskey, passkeyErrMsg } from './passkey'
 import { ensureKey, decRows, migratePlaintext } from './crypto'
 import { Icon, BrandMark } from './components'
+import { setFiscalStartMonth, normalizeStartMonth, DEFAULT_FISCAL_START } from './period'
+import { APP_NAME } from './brand'
 
 // 一定時間操作がなければ自動ログアウト（スマホの置き忘れ・共用PC対策）。
 // パスキーなら再ログインは数秒なので、短めでも業務に支障が出にくい
@@ -116,7 +118,28 @@ export default function App() {
     setMemberId((cur) => cur && rows.some((m) => m.id === cur) ? cur : (rows.find((m) => m.active)?.id ?? null))
   }, [notify])
 
-  useEffect(() => { if (session && keyState === 'ready') loadMembers() }, [session, keyState, loadMembers])
+  // 年度の開始月（半期の区切り）。移行004が未実行なら4月固定で動かす
+  const [fiscal, setFiscal] = useState({ month: null, available: true })
+  const loadSettings = useCallback(async () => {
+    const { data, error } = await supabase.from('user_settings').select('fiscal_start_month').maybeSingle()
+    const missing = error && (error.code === '42P01' || error.code === 'PGRST205')
+    if (error && !missing) notify(`設定を読み込めませんでした（4月始まりで表示します）：${errMsg(error)}`, 'error')
+    const month = normalizeStartMonth(data?.fiscal_start_month ?? DEFAULT_FISCAL_START)
+    setFiscalStartMonth(month) // 以降、期間計算はこの開始月を使う
+    setFiscal({ month, available: !missing })
+  }, [notify])
+  useEffect(() => { setFiscal({ month: null, available: true }) }, [userId]) // 別の人がログインしたら読み直す
+  const changeFiscalStart = async (month) => {
+    const { error } = await supabase.from('user_settings')
+      .upsert({ owner_id: userId, fiscal_start_month: month, updated_at: new Date().toISOString() })
+    if (error) { notify(`保存できませんでした：${errMsg(error)}`, 'error'); return false }
+    setFiscalStartMonth(month)
+    setFiscal({ month, available: true })
+    notify(`年度の開始月を${month}月に変更しました`)
+    return true
+  }
+
+  useEffect(() => { if (session && keyState === 'ready') { loadMembers(); loadSettings() } }, [session, keyState, loadMembers, loadSettings])
 
   // パスキー未登録なら、登録をおすすめするカードを出す
   const [suggestPasskey, setSuggestPasskey] = useState(false)
@@ -135,13 +158,15 @@ export default function App() {
   if (configError) return <div className="gate"><div className="gate-card sheet">{configError}</div></div>
   if (session === undefined) return <div className="gate"><div className="muted">読み込み中…</div></div>
   if (!session) return <Login />
-  if (keyState !== 'ready') {
+  // 鍵の準備中、または設定（年度の開始月）の読み込み中は待機画面を出す
+  const opening = keyState === 'loading' || (keyState === 'ready' && fiscal.month === null)
+  if (keyState !== 'ready' || opening) {
     return (
       <div className="gate">
         <div className="gate-card">
           <div className="gate-brand"><BrandMark /></div>
           <div className="sheet stack">
-            {keyState === 'loading' ? (
+            {opening ? (
               <>
                 <b>データを開いています</b>
                 <p className="muted" style={{ margin: 0 }}>この端末で初めて使うときは、サーバーの起動待ちで最大1分ほどかかります。</p>
@@ -168,19 +193,22 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* 野帳の表紙：PCでは左の帯、スマホでは上部のロゴと下部のメニュー */}
       <div className="side">
         <header className="masthead">
-          <span className="brand"><BrandMark />GoodBad記録</span>
+          <span className="brand"><BrandMark /><span className="brand-name">{APP_NAME}</span></span>
         </header>
         <nav className="nav" aria-label="メニュー">
           {TABS.map((t) => (
             <button key={t.id} type="button" aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)}>
-              <Icon name={t.ico} />{t.label}
+              <Icon name={t.ico} /><span>{t.label}</span>
             </button>
           ))}
         </nav>
+        <p className="side-foot">記録は暗号化して保存しています</p>
       </div>
-      <main className="main">
+      {/* 開始月を変えたら各画面を作り直し、半期の区切りを反映する */}
+      <main className="main" key={fiscal.month}>
         {suggestPasskey && (
           <div className="notice">
             <b>次回から指紋・顔認証でログインできます</b>
@@ -203,7 +231,10 @@ export default function App() {
             {tab === 'goals' && <Goals {...shared} />}
             {tab === 'meetings' && <Meetings {...shared} />}
             {tab === 'reports' && <Reports {...shared} />}
-            {tab === 'settings' && <Settings allMembers={members} reload={loadMembers} notify={notify} session={session} onPasskeyChange={checkPasskeys} />}
+            {tab === 'settings' && (
+              <Settings allMembers={members} reload={loadMembers} notify={notify} session={session} onPasskeyChange={checkPasskeys}
+                fiscal={fiscal} onFiscalChange={changeFiscalStart} />
+            )}
           </>
         )}
       </main>
