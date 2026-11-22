@@ -20,11 +20,11 @@ test('同じ文でも毎回違う暗号文になる（推測されにくい）',
 })
 test('鍵が違うと読めない', async () => {
   const other = await importKey(await deriveKeyBytes(SECRET + 'x'))
-  const c = await encryptText(key, 'members', 'name', '佐藤')
+  const c = await encryptText(key, 'members', 'name', '山田')
   assert.equal(await decryptText(other, 'members', 'name', c), UNREADABLE)
 })
 test('改ざん・別の列への移し替えを検知する', async () => {
-  const c = await encryptText(key, 'members', 'name', '佐藤')
+  const c = await encryptText(key, 'members', 'name', '山田')
   const tampered = c.slice(0, -4) + (c.slice(-4) === 'AAAA' ? 'BBBB' : 'AAAA')
   assert.equal(await decryptText(key, 'members', 'name', tampered), UNREADABLE)
   assert.equal(await decryptText(key, 'points', 'content', c), UNREADABLE)
