@@ -1,5 +1,5 @@
 // =============================================================
-// GoodBad記録 API サーバー（Render の Web Service で動かす）
+// キヅキ帳 API サーバー（Render の Web Service で動かす）
 //
 // 役割 :
 //   1) データ暗号化用の鍵を、ログイン済みの許可ユーザーにだけ渡す（GET /api/data-key）
@@ -22,7 +22,7 @@
 // =============================================================
 import express from 'express'
 import { createClient } from '@supabase/supabase-js'
-import { halfKeyOfMonth, halfRange, monthRange, monthLabel, halfLabel, jstDateStr, toTs } from '../src/period.js'
+import { halfKeyOfMonth, halfRange, monthRange, monthLabel, halfLabel, jstDateStr, toTs, normalizeStartMonth, DEFAULT_FISCAL_START } from '../src/period.js'
 import { deriveKeyBytes, importKey, bytesToB64, decryptRows, encryptText } from '../src/cryptoCore.js'
 import { meetingKindLabel } from '../src/labels.js'
 
@@ -150,8 +150,15 @@ app.post('/api/generate-report', async (req, res) => {
     if (!memberRow) return fail(404, 'メンバーが見つかりません')
     const [member] = await decryptRows(dataKey, 'members', [memberRow])
 
-    const [from, to] = report_type === 'monthly' ? monthRange(period_key) : halfRange(period_key)
-    const halfKey = report_type === 'half' ? period_key : halfKeyOfMonth(period_key) // 月次でも所属半期の目標を使う
+    // 利用者ごとの「年度の開始月」。移行004が未実行・未設定なら4月として続行する
+    // （同時に複数の利用者を処理するため、期間計算の関数には毎回明示して渡す）
+    const missingTable = (e) => e && (e.code === '42P01' || e.code === 'PGRST205')
+    const { data: setRow, error: setErr } = await sb.from('user_settings').select('fiscal_start_month').maybeSingle()
+    if (setErr && !missingTable(setErr)) throw new Error(`設定の取得失敗: ${setErr.message}`)
+    const fiscalStart = normalizeStartMonth(setRow?.fiscal_start_month ?? DEFAULT_FISCAL_START)
+
+    const [from, to] = report_type === 'monthly' ? monthRange(period_key) : halfRange(period_key, fiscalStart)
+    const halfKey = report_type === 'half' ? period_key : halfKeyOfMonth(period_key, fiscalStart) // 月次でも所属半期の目標を使う
 
     const { data: goalRows, error: gErr } = await sb.from('goals').select('id,title,description')
       .eq('member_id', member_id).eq('period_key', halfKey).order('sort_order')
@@ -166,7 +173,6 @@ app.post('/api/generate-report', async (req, res) => {
 
     // 期待・なってほしい姿（その半期の1件）と、期間内の面談記録
     // 移行003のSQLが未実行でテーブルが無い場合は、無いものとして続行する（レポート作成自体は止めない）
-    const missingTable = (e) => e && (e.code === '42P01' || e.code === 'PGRST205')
     const { data: expRow, error: eErr } = await sb.from('expectations').select('expectation,vision')
       .eq('member_id', member_id).eq('period_key', halfKey).maybeSingle()
     if (eErr && !missingTable(eErr)) throw new Error(`期待の取得失敗: ${eErr.message}`)
@@ -182,7 +188,7 @@ app.post('/api/generate-report', async (req, res) => {
     if (!points.length && !meetings.length) return fail(400, 'この期間の記録・面談記録が1件もないため、レポートを作成できません')
 
     // 4) プロンプト作成
-    const { system, user: userMsg } = buildPrompt({ member, report_type, period_key, goals, points, expectation, meetings })
+    const { system, user: userMsg } = buildPrompt({ member, report_type, period_key, goals, points, expectation, meetings, fiscalStart })
 
     // 5) Claude API 呼び出し（タイムアウト付き）
     let ai
@@ -239,7 +245,7 @@ app.post('/api/generate-report', async (req, res) => {
   }
 })
 
-export function buildPrompt({ member, report_type, period_key, goals, points, expectation = null, meetings = [] }) {
+export function buildPrompt({ member, report_type, period_key, goals, points, expectation = null, meetings = [], fiscalStart = DEFAULT_FISCAL_START }) {
   const goalTitle = new Map(goals.map((g) => [g.id, g.title]))
   const goalText = goals.length
     ? goals.map((g, i) => `目標${i + 1}: ${g.title}${g.description ? `\n  詳細: ${g.description}` : ''}`).join('\n')
@@ -256,7 +262,7 @@ export function buildPrompt({ member, report_type, period_key, goals, points, ex
   const mtgText = meetings.length
     ? meetings.map((m) => `- ${String(m.met_on).replaceAll('-', '/')} ${meetingKindLabel(m.kind)}: ${oneLine(m.content)}${m.next_actions ? `\n  次回までに: ${oneLine(m.next_actions)}` : ''}`).join('\n')
     : '（この期間の面談記録なし）'
-  const label = report_type === 'monthly' ? monthLabel(period_key) : halfLabel(period_key)
+  const label = report_type === 'monthly' ? monthLabel(period_key) : halfLabel(period_key, fiscalStart)
   const kindName = report_type === 'monthly' ? '月次レポート' : '半期レポート'
 
   const system =
@@ -283,4 +289,4 @@ export function buildPrompt({ member, report_type, period_key, goals, points, ex
   return { system, user }
 }
 
-app.listen(PORT, () => console.log(`GoodBad API listening on :${PORT}`))
+app.listen(PORT, () => console.log(`キヅキ帳 API listening on :${PORT}`))
