@@ -7,7 +7,7 @@
 import { useState } from 'react'
 import { supabase, errMsg } from '../supabase'
 import { passkeySupported, signInWithPasskey, passkeyErrMsg } from '../passkey'
-import { BrandMark } from '../components'
+import { APP_NAME, APP_TAGLINE } from '../brand'
 
 export default function Login() {
   const supported = passkeySupported()
@@ -39,9 +39,8 @@ export default function Login() {
     <div className="gate">
       <div className="gate-card">
         <div className="gate-brand">
-          <BrandMark />
-          <h1>GoodBad記録</h1>
-          <p>気づいたその場で、メンバーの良かったこと・気になったことを書き留める手帳です。</p>
+          <h1>{APP_NAME}</h1>
+          <p>{APP_TAGLINE}</p>
         </div>
 
         <div className="sheet stack">

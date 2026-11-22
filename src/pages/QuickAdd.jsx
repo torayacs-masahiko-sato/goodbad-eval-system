@@ -101,7 +101,7 @@ export default function QuickAdd({ members, memberId, setMemberId, notify }) {
 
       <section className="sheet">
         <h2 className="sheet-title">{who}さんの今月</h2>
-        <Score good={monthGood} bad={monthBad} size={22} />
+        <Score good={monthGood} bad={monthBad} size={28} />
       </section>
 
       <section className="sheet flush" aria-label="最近の記録">
